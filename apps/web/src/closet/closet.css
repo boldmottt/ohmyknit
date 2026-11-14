@@ -60,91 +60,6 @@
   color: var(--c-soft);
   letter-spacing: 0.04em;
 }
-.linkish {
-  background: none;
-  border: 0;
-  padding: 10px 0;
-  min-height: 44px;
-  cursor: pointer;
-  font-size: 0.8rem;
-  letter-spacing: 0.14em;
-  color: var(--c-soft);
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: color 0.25s;
-}
-.linkish:hover,
-.linkish.strong {
-  color: var(--c-ink);
-}
-.linkish.danger:hover {
-  color: var(--danger);
-}
-.linkish:disabled {
-  opacity: 0.4;
-}
-
-/* ── 머리말 ── */
-.closet-head {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 16px;
-  padding: calc(14px + env(safe-area-inset-top)) clamp(18px, 4vw, 52px) 10px;
-  font-size: 0.8rem;
-  letter-spacing: 0.16em;
-  position: relative;
-  z-index: 5;
-}
-.wordmark {
-  font-size: 1.15rem;
-  letter-spacing: 0.5em;
-  font-weight: 300;
-  white-space: nowrap;
-}
-.closet-nav {
-  display: flex;
-  gap: clamp(14px, 2.6vw, 34px);
-}
-.closet-nav a,
-.closet-side a {
-  text-decoration: none;
-  padding: 12px 0;
-  position: relative;
-  white-space: nowrap;
-  color: var(--c-soft);
-  transition: color 0.25s;
-}
-.closet-nav a::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 8px;
-  height: 1px;
-  background: currentColor;
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.closet-nav a:hover,
-.closet-nav a[aria-current],
-.closet-side a:hover {
-  color: var(--c-ink);
-}
-.closet-nav a:hover::after,
-.closet-nav a[aria-current]::after {
-  transform: scaleX(1);
-}
-.closet-side {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: clamp(12px, 2vw, 28px);
-}
-
 /* ── 이름표 고르기 ── */
 .who {
   flex: 1;
@@ -665,19 +580,6 @@
   .closet {
     --u: min(1.9vw, 1.05vh);
     overflow-y: auto;
-  }
-  .closet-head {
-    grid-template-columns: 1fr auto;
-    row-gap: 0;
-  }
-  .closet-nav {
-    grid-row: 2;
-    grid-column: 1 / -1;
-    justify-content: space-between;
-  }
-  .wordmark {
-    font-size: 1rem;
-    letter-spacing: 0.36em;
   }
   .rail-view {
     display: flex;

@@ -11,7 +11,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@fontsource/gowun-batang": "^5.3.0",
     "@knitcloset/gauge-engine": "workspace:*",
     "@knitcloset/knit-render": "workspace:*",
     "@knitcloset/pattern-schema": "workspace:*",

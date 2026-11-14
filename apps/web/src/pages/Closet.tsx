@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type Profile, type ProjectSummary } from '../api';
 import { emptyHangerArt, garmentArt } from '../closet/garmentArt';
 import { daysSince, fmtDate, getStoredProfile, Modal, pct, reducedMotion, relDay, setStoredProfile, useToast } from '../ui';
+import { SiteHeader } from '../SiteHeader';
 import '../closet/closet.css';
 
 /** 레일 위 한 칸: 프로젝트 또는 맨 끝의 빈 옷걸이(새 작품) */
@@ -42,23 +43,15 @@ export function Closet() {
 
   return (
     <div className="closet">
-      <header className="closet-head">
-        <span className="wordmark">뜨개옷장</span>
-        <nav className="closet-nav" aria-label="메뉴">
-          <Link to="/" aria-current="page">옷장</Link>
-          <Link to="/patterns">도안</Link>
-          <Link to="/studio">스튜디오</Link>
-          <Link to="/profile/hands">내 손</Link>
-        </nav>
-        <div className="closet-side">
-          {profile && (
+      <SiteHeader
+        side={
+          profile && (
             <button className="linkish" onClick={leave} title="다른 이름표로 바꾸기">
               {profile.avatar} {profile.name}
             </button>
-          )}
-          <Link to="/settings">설정</Link>
-        </div>
-      </header>
+          )
+        }
+      />
       {profile ? (
         <Rail key={profile.id} profile={profile} returned={returned} />
       ) : (

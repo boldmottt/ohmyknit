@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Link, Route, Routes, useLocation } from 'react-router-dom';
 import { Closet } from './pages/Closet';
+import { SiteHeader } from './SiteHeader';
 
 const Work = lazy(() => import('./pages/Work'));
 const NewProject = lazy(() => import('./pages/NewProject'));
@@ -16,15 +17,7 @@ export function App() {
   const showNav = !loc.pathname.endsWith('/work') && loc.pathname !== '/';
   return (
     <>
-      {showNav && (
-        <nav className="topnav" aria-label="메뉴">
-          <Link to="/">🚪 옷장</Link>
-          <Link to="/patterns">📜 도안</Link>
-          <Link to="/studio">🎨 스튜디오</Link>
-          <Link to="/profile/hands">✋ 내 손</Link>
-          <Link to="/settings">⚙ 설정</Link>
-        </nav>
-      )}
+      {showNav && <SiteHeader />}
       <Suspense fallback={<div className="page muted">불러오는 중…</div>}>
         <Routes>
           <Route path="/" element={<Closet />} />

@@ -752,195 +752,348 @@
   }
 }
 
-/* ═══════════ 표현 계층: 광택 · 깊이 · 움직임 ═══════════ */
+/* ═══════════ 표현 계층: 옷장과 같은 결 (가는 선, 가는 글자, 넓은 여백) ═══════════ */
 .work {
   background:
-    radial-gradient(ellipse 80% 60% at 50% 0%, color-mix(in srgb, #fff 55%, var(--bg)), transparent 70%),
+    radial-gradient(ellipse 60% 70% at 50% 45%, color-mix(in srgb, #fff 55%, transparent), transparent 70%),
     var(--bg);
 }
-.work-top,
-.status-bar {
-  position: relative;
-  z-index: 6;
-  box-shadow: 0 1px 0 var(--glass-border, transparent), 0 6px 20px rgba(43, 29, 20, 0.08);
+.work-top {
+  background: transparent;
+  border-bottom: 1px solid var(--line);
+  padding-left: clamp(12px, 3vw, 40px);
+  padding-right: clamp(12px, 3vw, 40px);
+  gap: clamp(8px, 1.6vw, 22px);
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+}
+.work-top .btn {
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
 }
 .work-top h1 {
-  font-size: 1.15rem;
+  font-size: 0.95rem;
+  font-weight: 300;
+  letter-spacing: 0.2em;
+}
+.piece-tabs {
+  gap: clamp(10px, 1.6vw, 24px);
 }
 .piece-tabs button {
-  transition: background 0.2s, color 0.2s, border-color 0.2s, transform 0.2s;
-}
-.piece-tabs button:hover {
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  padding: 6px 0;
+  letter-spacing: 0.14em;
+  font-weight: 300;
+  transition: color 0.25s, border-color 0.25s;
 }
 .piece-tabs button[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--accent) 10%, var(--paper));
-  box-shadow: inset 0 1px 0 var(--glass-border, transparent), 0 2px 8px color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--ink);
+  color: var(--ink);
+  font-weight: 400;
 }
 .piece-tabs circle {
-  transition: stroke-dasharray 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: stroke-dasharray 0.8s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.tabs button {
-  transition: color 0.2s, border-color 0.25s;
+.sync {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
 }
 
-/* 카운터: 숫자가 바뀔 때 톡 튀어 오름 */
+/* 세 영역: 상자 대신 가는 세로선으로만 나눔 */
+.work-main {
+  gap: 0;
+  padding: 0;
+}
+.panel {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.sim,
+.dock {
+  border-left: 1px solid var(--line);
+}
+.tabs {
+  background: transparent;
+  border-bottom: 1px solid var(--line);
+  padding: 0 clamp(12px, 2vw, 28px);
+  gap: 22px;
+}
+.tabs button {
+  flex: none;
+  font-size: 0.78rem;
+  letter-spacing: 0.16em;
+  font-weight: 300;
+  border-bottom-width: 1px;
+  transition: color 0.25s, border-color 0.25s;
+}
+.tabs button[aria-selected='true'] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+  font-weight: 400;
+}
+.tab-body {
+  padding: clamp(14px, 2vw, 28px);
+}
+.chart-row .cell {
+  border-color: rgba(0, 0, 0, 0.08);
+  transition: opacity 0.4s;
+}
+.chart-row .cell.rep {
+  border-right: 1px solid var(--ink);
+}
+.chart-row .ruler {
+  border: 1.5px solid var(--ink);
+  border-radius: 1px;
+  box-shadow: 0 8px 20px rgba(60, 40, 55, 0.16);
+  animation: ruler 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes ruler {
+  from {
+    transform: translateY(100%);
+    opacity: 0.3;
+  }
+}
+.chart-row .rownum {
+  letter-spacing: 0.1em;
+}
+.chart-row.current .rownum {
+  color: var(--ink);
+}
+.step button {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 14px 0;
+}
+.step.current button {
+  border: 0;
+  border-bottom: 1px solid var(--ink);
+}
+
+/* 지시 카드 */
+.row-card {
+  margin: 0;
+  padding: clamp(14px, 2vw, 26px);
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  line-height: 1.7;
+}
+.row-card.alert {
+  background: var(--warn-bg);
+  border-top-color: var(--warn);
+  animation: fade-in 0.5s ease;
+}
+.row-card-head {
+  font-size: 0.8rem;
+  letter-spacing: 0.14em;
+}
+.row-card .big {
+  font-size: 1.7rem;
+  font-weight: 200;
+  letter-spacing: 0.1em;
+}
+.row-card hr {
+  border-top: 1px solid var(--line);
+  width: 18px;
+  margin: 12px 0;
+}
+.cast-on {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  letter-spacing: 0.06em;
+}
+
+/* 시뮬레이션 */
+.sim-head {
+  padding: 14px;
+}
+.knit-scroll {
+  background: none;
+}
+.knit-scroll canvas {
+  filter: drop-shadow(0 26px 28px rgba(60, 40, 55, 0.22)) drop-shadow(0 2px 3px rgba(60, 40, 55, 0.2));
+}
+.scrub-bubble {
+  background: var(--ink);
+  color: var(--bg);
+  border-radius: 2px;
+  letter-spacing: 0.1em;
+  font-size: 0.78rem;
+}
+.canvas-tools {
+  border-top: 1px solid var(--line);
+  padding: 10px clamp(12px, 2vw, 24px);
+}
+.cmp-shape {
+  fill: transparent;
+  stroke: var(--ink);
+  stroke-dasharray: 3 4;
+}
+.cmp-label {
+  letter-spacing: 0.1em;
+  font-weight: 300;
+}
+
+/* 진행 도크 */
+.dock {
+  padding: clamp(14px, 2vw, 28px);
+  gap: 22px;
+}
 .counter {
   border: 0;
-  border-radius: 20px;
-  padding: 14px 8px 12px;
-  background:
-    radial-gradient(ellipse 80% 70% at 50% 30%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
-    linear-gradient(180deg, color-mix(in srgb, var(--paper) 100%, #fff), color-mix(in srgb, var(--paper) 88%, var(--panel-border)));
-  box-shadow:
-    inset 0 1px 0 var(--glass-border, #fff),
-    inset 0 0 0 1px color-mix(in srgb, var(--panel-border) 45%, transparent),
-    inset 0 -10px 24px color-mix(in srgb, var(--panel-border) 14%, transparent),
-    0 8px 22px rgba(43, 29, 20, 0.12);
+  border-radius: 0;
+  padding: 0;
+  text-align: left;
+}
+.counter .muted {
+  font-size: 0.72rem;
+  letter-spacing: 0.2em;
+}
+.counter-num {
+  margin: 6px 0;
 }
 .counter-num .cur {
   display: inline-block;
-  font-family: var(--serif);
+  font-size: clamp(84px, 9vw, 136px);
+  font-weight: 200;
   letter-spacing: -0.02em;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 78%, #fff), var(--accent) 55%, color-mix(in srgb, var(--accent) 82%, #000));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  filter: drop-shadow(0 3px 6px color-mix(in srgb, var(--accent) 28%, transparent));
-  animation: tick 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
+  line-height: 0.95;
+  color: var(--ink);
+  animation: tick 0.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @keyframes tick {
-  0% {
-    transform: translateY(0.28em) scale(0.86);
+  from {
+    transform: translateY(0.22em);
     opacity: 0;
   }
-  60% {
-    opacity: 1;
-  }
+}
+.counter-num .tot {
+  font-size: 1rem;
+  font-weight: 300;
+  letter-spacing: 0.16em;
+  color: var(--ink-soft);
+}
+.counter-btns {
+  gap: 10px;
+}
+.counter-btns .inc,
+.counter-btns .dec {
+  border-radius: 2px;
+  min-height: 88px;
+  font-weight: 200;
+  letter-spacing: 0.1em;
 }
 .counter-btns .inc {
+  font-size: 1.7rem;
   position: relative;
   overflow: hidden;
-  border-radius: 18px;
-  font-family: var(--serif);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -6px 14px rgba(0, 0, 0, 0.22), 0 10px 22px color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .counter-btns .inc::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.28) 50%, transparent 65%);
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.16) 50%, transparent 65%);
   transform: translateX(-120%);
-  transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .counter-btns .inc:hover::after,
 .counter-btns .inc:active::after {
   transform: translateX(120%);
 }
-.counter-btns .inc:active:not(:disabled) {
-  transform: translateY(2px) scale(0.985);
-  box-shadow: inset 0 4px 10px rgba(0, 0, 0, 0.35), 0 2px 6px color-mix(in srgb, var(--accent) 40%, transparent);
+.linked-row {
+  border-bottom: 1px solid var(--line);
+  padding: 9px 0;
+  font-size: 0.86rem;
+  letter-spacing: 0.06em;
 }
-.counter-btns .dec {
-  border-radius: 18px;
-}
-
-/* 지시 카드: 왼쪽 강조선 + 경고일 때 은은한 맥박 */
-.row-card {
-  position: relative;
-  overflow: hidden;
-  border: 0;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 70%, var(--paper)), var(--bg));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--panel-border) 45%, transparent), inset 0 1px 0 var(--glass-border, transparent), 0 6px 16px rgba(43, 29, 20, 0.08);
-}
-.row-card::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 5px;
-  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 50%, transparent));
-}
-.row-card.alert {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--warn-bg) 80%, #fff), var(--warn-bg));
-  box-shadow: inset 0 0 0 1px var(--warn), 0 8px 22px color-mix(in srgb, var(--warn) 30%, transparent);
-  animation: alert-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-.row-card.alert::before {
-  background: var(--warn);
-}
-@keyframes alert-in {
-  from {
-    transform: scale(0.97);
-  }
-}
-.row-card .big {
-  font-family: var(--serif);
-  font-size: 1.5rem;
-}
-
-/* 시뮬레이션: 스포트라이트 받는 작업대 위의 편물 */
-.knit-scroll {
-  background:
-    radial-gradient(ellipse 70% 55% at 50% 35%, color-mix(in srgb, #fff 75%, var(--paper)), transparent 72%),
-    radial-gradient(ellipse 120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, var(--panel-border) 22%, transparent)),
-    var(--paper);
-}
-.knit-scroll canvas {
-  border-radius: 3px;
-  filter: drop-shadow(0 22px 24px rgba(60, 30, 10, 0.3)) drop-shadow(0 3px 4px rgba(60, 30, 10, 0.3));
-}
-.scrub-bubble {
-  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 45%, transparent);
-  animation: pop-in 0.2s ease;
-}
-.chart-row .cell {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(0, 0, 0, 0.1);
-  transition: opacity 0.3s, filter 0.2s;
-}
-.chart-row .ruler {
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6), 0 6px 16px color-mix(in srgb, var(--accent) 40%, transparent);
-  animation: ruler 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-@keyframes ruler {
-  from {
-    transform: translateY(100%);
-    opacity: 0.4;
-  }
+.linked-row b {
+  font-weight: 400;
 }
 .upcoming li {
-  transition: background 0.3s;
+  padding: 7px 0;
+  font-size: 0.88rem;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid transparent;
 }
 .upcoming li.soon {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 50%, transparent);
+  background: none;
+  border-radius: 0;
+  padding: 7px 0;
+  border-bottom-color: var(--warn);
+  color: var(--ink);
 }
-.menu {
-  animation: pop-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-  transform-origin: top right;
+.notes li.soon {
+  background: var(--warn-bg);
+  border-radius: 2px;
 }
-.menu button {
-  transition: background 0.15s;
+.tools {
+  gap: 8px;
 }
-.compare svg {
-  filter: drop-shadow(0 12px 16px rgba(60, 30, 10, 0.2));
+.tools .btn {
+  font-size: 0.8rem;
 }
-.cmp-fill {
-  transition: height 0.6s cubic-bezier(0.16, 1, 0.3, 1), y 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+.stitch-track {
+  border: 1px solid var(--line);
+  border-radius: 2px;
 }
 
-/* 집중 모드: 어둠 속에서 숫자만 빛남 */
+.status-bar {
+  background: transparent;
+  border-top: 1px solid var(--line);
+  padding-left: clamp(12px, 3vw, 40px);
+  padding-right: clamp(12px, 3vw, 40px);
+  gap: clamp(14px, 2.4vw, 34px);
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  color: var(--ink-soft);
+}
+.status-bar b {
+  color: var(--ink);
+  font-weight: 400;
+}
+.menu {
+  animation: pop-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.menu button {
+  font-size: 0.84rem;
+  letter-spacing: 0.08em;
+  border-radius: 2px;
+}
+.work-loading {
+  letter-spacing: 0.2em;
+  font-weight: 300;
+  font-size: 0.9rem;
+}
+
+/* 집중 모드: 어둠 속에서 숫자만 */
 .focus-mode {
-  background: radial-gradient(ellipse 70% 60% at 50% 42%, #33251a, #17100c 70%);
+  background: radial-gradient(ellipse 70% 60% at 50% 42%, #2c2429, #151114 72%);
+  color: #efe6ea;
   overflow: hidden;
+  font-weight: 300;
+  letter-spacing: 0.12em;
 }
 .focus-mode.inc {
-  background: radial-gradient(ellipse 70% 60% at 50% 42%, #3d2c1c, #17100c 70%);
+  background: radial-gradient(ellipse 70% 60% at 50% 42%, #372d33, #151114 72%);
 }
 .focus-mode.dec {
-  background: radial-gradient(ellipse 70% 60% at 50% 42%, #3a1f1c, #17100c 70%);
+  background: radial-gradient(ellipse 70% 60% at 50% 42%, #38262a, #151114 72%);
+}
+.focus-top {
+  color: #a2959d;
+  font-size: 0.74rem;
+  letter-spacing: 0.2em;
+}
+.focus-top .btn {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: inherit;
 }
 .focus-glow {
   position: absolute;
@@ -950,39 +1103,70 @@
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(232, 176, 74, 0.26), transparent 62%);
+  background: radial-gradient(circle, rgba(230, 207, 174, 0.16), transparent 62%);
   pointer-events: none;
-  animation: breathe 5s ease-in-out infinite;
+  animation: breathe 6s ease-in-out infinite;
 }
 @keyframes breathe {
   50% {
     transform: translate(-50%, -50%) scale(1.08);
-    opacity: 0.75;
+    opacity: 0.7;
   }
 }
 .focus-num {
   position: relative;
-  font-family: var(--serif);
-  background: linear-gradient(180deg, #ffe2a0, #e8b04a 55%, #b97f22);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  filter: drop-shadow(0 0 34px rgba(232, 176, 74, 0.45));
-  animation: tick 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  font-weight: 100;
+  letter-spacing: -0.02em;
+  color: #f1e3cc;
+  animation: tick 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.focus-tot {
+  font-size: 0.9rem;
+  letter-spacing: 0.3em;
+  color: #a2959d;
 }
 .focus-card {
   position: relative;
-  background: rgba(60, 44, 32, 0.55);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  border-color: rgba(255, 220, 170, 0.16);
-  box-shadow: inset 0 1px 0 rgba(255, 230, 190, 0.12), 0 18px 40px rgba(0, 0, 0, 0.4);
+  background: none;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 0;
+  font-size: 1.05rem;
+  letter-spacing: 0.1em;
+}
+.focus-card .event,
+.focus-next {
+  color: #e6cfae;
+  font-weight: 400;
+}
+.focus-next {
+  font-size: 0.95rem;
 }
 .focus-chart span {
-  border-radius: 4px;
+  border: 0;
   margin: 1px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  border-radius: 1px;
 }
-.celebrate .knot {
-  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.25));
+.focus-hint {
+  border: 0;
+  color: #7d7178;
+  font-size: 0.7rem;
+  letter-spacing: 0.24em;
+}
+
+@media (max-width: 1100px) and (orientation: portrait), (max-width: 900px) {
+  .sim,
+  .dock {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .dock {
+    background: var(--bg);
+    box-shadow: none;
+  }
+}
+@media (max-width: 600px) {
+  .counter {
+    text-align: center;
+  }
 }
