@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler dev --persist-to ../../data --ip 0.0.0.0 --port 8787",
+    "dev": "wrangler dev --persist-to ../../data --ip 127.0.0.1 --port 8787",
     "migrate": "wrangler d1 migrations apply knitcloset --local --persist-to ../../data",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "serve": "wrangler dev --persist-to ../../data --ip 127.0.0.1 --port 8787 --log-level warn"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

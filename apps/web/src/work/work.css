@@ -540,6 +540,35 @@
   transition: width 0.2s;
 }
 
+.notes ul {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.notes li {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.notes li.soon {
+  background: var(--warn-bg);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+.notes img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+.notes summary {
+  cursor: pointer;
+}
+
 /* 축하 */
 .celebrate {
   text-align: center;

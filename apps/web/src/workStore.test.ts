@@ -147,4 +147,18 @@ describe('workStore', () => {
     useWork.getState().undo();
     expect(useWork.getState().snapshots[pid]!.currentRow).toBe(0);
   });
+
+  it('다른 기기에서 뜬 기록이 합쳐지면 알림 정보가 생김 (기획서 5.8)', async () => {
+    const { store } = fakeServer(0);
+    await useWork.getState().load(workData());
+    const pid = useWork.getState().activePieceId;
+    // 맥북에서 이미 3단을 떠서 서버에 있음
+    store.set(pid, [1, 2, 3].map((i) => ({ id: `mac-${i}`, pieceId: pid, type: 'row_inc' as const, fromRow: i - 1, toRow: i, at: i, device: 'mac' })));
+    // 아이패드에서 1단
+    useWork.getState().increment();
+    await new Promise((r) => setTimeout(r, 20));
+    await useWork.getState().flush();
+    expect(useWork.getState().snapshots[pid]!.currentRow).toBe(4);
+    expect(useWork.getState().merged).toEqual({ pieceId: pid, from: 1, to: 4 });
+  });
 });

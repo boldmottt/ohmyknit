@@ -74,6 +74,15 @@ export default function Work() {
     if (data && startOverall.current === null) startOverall.current = overall(data, snapshots).ratio;
   }, [data, snapshots]);
 
+  // 다른 기기에서 뜬 기록을 합쳤을 때 알림
+  const merged = w.merged;
+  useEffect(() => {
+    if (!merged || !data) return;
+    const name = data.pieces.find((p) => p.id === merged.pieceId)?.name ?? '';
+    toast({ text: `다른 기기의 기록을 합쳤어요: ${name} ${merged.from}단 → ${merged.to}단`, ms: 5000 });
+    useWork.getState().clearMerged();
+  }, [merged, data, toast]);
+
   // 타이머 표시용
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
@@ -316,6 +325,11 @@ export default function Work() {
           )}
         </section>
         <Dock
+          notes={notes}
+          onDeleteNote={async (nid) => {
+            await api.deleteNote(nid);
+            void reload();
+          }}
           piece={conv}
           view={view}
           projectId={data.project.id}

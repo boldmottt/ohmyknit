@@ -35,6 +35,8 @@ type WorkState = {
   pending: number;
   /** 확인한 잠금 이벤트 (pieceId:row) */
   acknowledged: Record<string, true>;
+  /** 다른 기기의 기록을 합쳐서 단이 바뀌었을 때 알림 (기획서 5.8) */
+  merged: { pieceId: string; from: number; to: number } | null;
   ui: { compare: boolean; focus: boolean; hoverRow: number | null; symbols: boolean };
 
   load(data: WorkData): Promise<void>;
@@ -49,6 +51,7 @@ type WorkState = {
   acknowledge(pieceId: string, row: number): void;
   togglePause(): void;
   setUi(p: Partial<WorkState['ui']>): void;
+  clearMerged(): void;
   flush(): Promise<void>;
   reset(): void;
 };
@@ -68,6 +71,7 @@ export const useWork = create<WorkState>((set, get) => ({
   sync: 'saved',
   pending: 0,
   acknowledged: {},
+  merged: null,
   ui: { compare: false, focus: false, hoverRow: null, symbols: readSymbols() },
 
   async load(data) {
@@ -218,6 +222,10 @@ export const useWork = create<WorkState>((set, get) => ({
     set({ ui: { ...get().ui, ...p } });
   },
 
+  clearMerged() {
+    set({ merged: null });
+  },
+
   async flush() {
     const { data } = get();
     if (!data) return;
@@ -229,6 +237,9 @@ export const useWork = create<WorkState>((set, get) => ({
         if (snap && (await pendingFor(p.id)).length === 0 && seqBefore === actSeq) {
           // 다른 기기에서 뜬 것까지 합친 서버 결과를 받아들임
           const cur = get().snapshots[p.id];
+          if (cur && cur.currentRow !== snap.currentRow) {
+            set({ merged: { pieceId: p.id, from: cur.currentRow, to: snap.currentRow } });
+          }
           set({
             snapshots: {
               ...get().snapshots,
@@ -249,7 +260,7 @@ export const useWork = create<WorkState>((set, get) => ({
   },
 
   reset() {
-    set({ data: null, snapshots: {}, undoStack: [], session: emptySession(), acknowledged: {} });
+    set({ data: null, snapshots: {}, undoStack: [], session: emptySession(), acknowledged: {}, merged: null });
   },
 }));
 

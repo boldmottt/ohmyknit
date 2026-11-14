@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ConvertedPiece } from '@knitcloset/gauge-engine';
+import { fileUrl, type Note } from '../api';
 import { linkedCounters, upcoming, type RowView } from '../derive';
 
 type Props = {
@@ -12,6 +13,8 @@ type Props = {
   stitchTracking: boolean;
   currentStitch: number;
   onStitchStep: (delta: number) => void;
+  notes: Note[];
+  onDeleteNote: (id: string) => void;
 };
 
 type Custom = { label: string; every: number };
@@ -36,7 +39,7 @@ function useCustomCounters(projectId: string): [Custom[], (c: Custom[]) => void]
 }
 
 /** ③ 진행 도크: 메인 카운터, 연결된 반복 카운터, 다가오는 일, 도구 (기획서 5.4) */
-export function Dock({ piece, view, projectId, onInc, onDec, onTool, stitchTracking, currentStitch, onStitchStep }: Props) {
+export function Dock({ piece, view, projectId, onInc, onDec, onTool, stitchTracking, currentStitch, onStitchStep, notes, onDeleteNote }: Props) {
   const [custom, setCustom] = useCustomCounters(projectId);
   const [adding, setAdding] = useState(false);
   const counters = linkedCounters(piece, view.completedRows, custom);
@@ -124,6 +127,28 @@ export function Dock({ piece, view, projectId, onInc, onDec, onTool, stitchTrack
           ))}
         </ul>
       </div>
+
+      {notes.length > 0 && (
+        <details className="notes">
+          <summary>
+            <h3 style={{ display: 'inline' }}>📌 메모 {notes.length}개</h3>
+            {notes.some((n) => Math.abs(n.row - (view.completedRows + 1)) <= 3) && <span className="badge warn">근처에 메모 있음</span>}
+          </summary>
+          <ul>
+            {notes.map((n) => (
+              <li key={n.id} className={Math.abs(n.row - (view.completedRows + 1)) <= 3 ? 'soon' : ''}>
+                <b className="num">{n.row}단</b> {n.text}
+                {n.photoKey && (
+                  <a href={fileUrl(n.photoKey)} target="_blank" rel="noreferrer">
+                    <img src={fileUrl(n.photoKey)} alt={`${n.row}단 사진`} />
+                  </a>
+                )}
+                <button className="btn ghost small" aria-label="메모 지우기" onClick={() => window.confirm('이 메모를 지울까요?') && onDeleteNote(n.id)}>✕</button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       <div className="tools">
         <button className="btn" onClick={() => onTool('checkin')}>📏 실측</button>

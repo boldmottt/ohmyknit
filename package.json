@@ -3,7 +3,17 @@
   "private": true,
   "packageManager": "pnpm@10.28.0",
   "scripts": {
+    "dev": "pnpm --filter @knitcloset/web build && pnpm migrate && pnpm --filter @knitcloset/worker dev",
+    "dev:web": "pnpm --filter @knitcloset/web dev",
+    "build": "pnpm --filter @knitcloset/web build",
+    "migrate": "pnpm --filter @knitcloset/worker migrate",
+    "start": "./scripts/start-server.sh",
+    "backup": "node scripts/backup.mjs",
+    "restore": "node scripts/restore.mjs",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck"
+  },
+  "engines": {
+    "node": ">=22.13"
   }
 }
