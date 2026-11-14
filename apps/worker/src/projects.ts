@@ -122,6 +122,9 @@ export async function projectSummaries(db: Db, where: string, ...params: (string
       yarn: p.yarn,
       note: p.note,
       palette: converted?.palette ?? [],
+      // 옷 그림에 쓸 배색 무늬 (첫 차트)와 옷 종류
+      motif: converted?.pieces.flatMap((x) => x.sections).find((x) => x.chart)?.chart?.grid ?? null,
+      kind: (/비니|모자|hat|beanie/i.test(`${p.name} ${p.pattern_title}`) ? 'hat' : 'sweater') as 'hat' | 'sweater',
       progress: total === 0 ? 0 : done / total,
       stitchesDone: done,
       totalStitches: total,

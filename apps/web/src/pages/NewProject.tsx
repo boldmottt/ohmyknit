@@ -125,7 +125,7 @@ export default function NewProject() {
       {step === 4 && createdId && pat && (
         <div className="card" style={{ textAlign: 'center' }}>
           <div className="hang-anim" style={{ width: 180, margin: '0 auto' }}>
-            <Garment id={createdId} palette={pat.palette} progress={0} swing label={info.name} />
+            <Garment id={createdId} palette={pat.palette} motif={pat.pieces.flatMap((x) => x.sections).find((x) => x.chart)?.chart?.grid ?? null} kind={/비니|모자|hat|beanie/i.test(info.name + pat.title) ? 'hat' : 'sweater'} progress={1} swing label={info.name} />
           </div>
           <h2 className="serif">"{info.name}"을 옷장에 걸었어요 🎉</h2>
           <div className="row" style={{ justifyContent: 'center' }}>

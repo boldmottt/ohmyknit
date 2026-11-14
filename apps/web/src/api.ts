@@ -63,6 +63,8 @@ export type ProjectSummary = {
   yarn: string;
   note: string;
   palette: { name: string; hex: string }[];
+  motif: number[][] | null;
+  kind: 'hat' | 'sweater';
   progress: number;
   stitchesDone: number;
   totalStitches: number;

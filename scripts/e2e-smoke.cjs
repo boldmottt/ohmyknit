@@ -111,8 +111,8 @@ const log = (...a) => console.log('▶', ...a);
   await page.waitForURL(BASE + '/');
   await page.waitForTimeout(1200);
   await page.screenshot({ path: OUT + '/09-closet-with-garment.png' });
-  await page.locator('.garment').first().click({ force: true });
-  await page.waitForTimeout(500);
+  await page.locator('.hang.front').waitFor();
+  await page.waitForTimeout(1200);
   await page.screenshot({ path: OUT + '/10-closet-detail.png' });
   log('detail:', (await page.locator('.detail').innerText()).replace(/\s+/g, ' ').slice(0, 200));
 
@@ -147,9 +147,8 @@ const log = (...a) => console.log('▶', ...a);
   const scrollW = await pp.evaluate(() => document.documentElement.scrollWidth);
   log('iphone scrollWidth', scrollW, 'viewport', pp.viewportSize().width);
   await pp.goto(BASE + '/');
-  await pp.waitForTimeout(400);
-  await pp.getByRole('button', { name: /아내분/ }).click({ force: true });
-  await pp.waitForTimeout(1800);
+  await pp.locator('.hang.front').waitFor();
+  await pp.waitForTimeout(2000);
   await pp.screenshot({ path: OUT + '/14-iphone-closet.png' });
 
   // 다크 모드 작업 화면

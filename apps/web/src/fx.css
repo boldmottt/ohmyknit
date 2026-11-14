@@ -237,3 +237,23 @@ h2 {
   transform: scale(1.12);
   z-index: 1;
 }
+
+/* 옷장 홈과 같은 결의 밝고 차분한 바탕 (밝은 테마) */
+:root:not([data-theme='dark']) {
+  --bg: #f4eff0;
+  --paper: #fffdfd;
+  --panel-border: #cbbcc3;
+  --ink: #3a3137;
+  --ink-soft: #85797f;
+  --ghost: rgba(244, 239, 240, 0.8);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #1e1612;
+    --paper: #2a201a;
+    --panel-border: #5c4630;
+    --ink: #f3e6d3;
+    --ink-soft: #bba68e;
+    --ghost: rgba(30, 22, 18, 0.8);
+  }
+}
