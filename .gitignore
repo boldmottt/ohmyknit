@@ -5,3 +5,4 @@ data/
 .wrangler/
 .DS_Store
 coverage/
+apps/web/dist/

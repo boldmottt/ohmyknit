@@ -1,0 +1,25 @@
+name = "knitcloset"
+main = "src/index.ts"
+compatibility_date = "2025-07-01"
+compatibility_flags = ["nodejs_compat"]
+
+# 웹 앱 빌드 결과를 같은 Worker에서 서빙 (/api/* 외 모든 경로)
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "knitcloset"
+database_id = "00000000-0000-0000-0000-000000000000" # 로컬 전용. 클라우드 배포 시 `wrangler d1 create`로 받은 id로 교체
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "knitcloset-files"
+
+[vars]
+# 비밀 값(ANTHROPIC_API_KEY)은 .dev.vars에 둡니다
+AI_MODEL = "claude-opus-5-5"

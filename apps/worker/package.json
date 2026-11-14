@@ -1,0 +1,26 @@
+{
+  "name": "@knitcloset/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --persist-to ../../data --ip 0.0.0.0 --port 8787",
+    "migrate": "wrangler d1 migrations apply knitcloset --local --persist-to ../../data",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "@knitcloset/gauge-engine": "workspace:*",
+    "@knitcloset/pattern-schema": "workspace:*",
+    "hono": "^4.6.14",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9",
+    "wrangler": "^4.40.0"
+  }
+}
