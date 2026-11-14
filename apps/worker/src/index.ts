@@ -492,8 +492,8 @@ api.post('/projects/:id/yarn', async (c) => {
 api.get('/projects/:id/work', async (c) => {
   const db = c.var.db;
   const id = c.req.param('id');
-  const p = await db.first<ProjectRow & { pattern_title: string; file_key: string | null }>(
-    `SELECT p.*, pt.title AS pattern_title, pt.file_key FROM projects p JOIN patterns pt ON pt.id = p.pattern_id WHERE p.id = ?`,
+  const p = await db.first<ProjectRow & { pattern_title: string; file_key: string | null; original_json: string }>(
+    `SELECT p.*, pt.title AS pattern_title, pt.file_key, pt.original_json FROM projects p JOIN patterns pt ON pt.id = p.pattern_id WHERE p.id = ?`,
     id,
   );
   if (!p) throw new NotFound('프로젝트를 찾을 수 없어요');
@@ -534,6 +534,10 @@ api.get('/projects/:id/work', async (c) => {
       ballGrams: p.ball_grams,
     },
     converted,
+    finished:
+      json<{ sizes?: { label: string; finished?: Record<string, number> }[] }>(p.original_json, {}).sizes?.find(
+        (s) => s.label === p.size_label,
+      )?.finished ?? {},
     pieces: pieces.map((x) => ({
       id: x.id,
       key: x.piece_key,
