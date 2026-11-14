@@ -4,3 +4,6 @@ export * from './shaping.js';
 export * from './progress.js';
 export * from './coefficient.js';
 export * from './rowTable.js';
+export * from './convert.js';
+export * from './needle.js';
+export * from './events.js';
