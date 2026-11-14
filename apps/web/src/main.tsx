@@ -6,7 +6,10 @@ import { registerSW } from 'virtual:pwa-register';
 import { App } from './App';
 import { applyPrefs, readPrefs, ToastProvider } from './ui';
 import { flushAll } from './offline';
+import '@fontsource/gowun-batang/400.css';
+import '@fontsource/gowun-batang/700.css';
 import './styles.css';
+import './fx.css';
 
 applyPrefs(readPrefs());
 

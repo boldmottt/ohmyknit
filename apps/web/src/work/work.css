@@ -751,3 +751,238 @@
     width: 80px;
   }
 }
+
+/* ═══════════ 표현 계층: 광택 · 깊이 · 움직임 ═══════════ */
+.work {
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 0%, color-mix(in srgb, #fff 55%, var(--bg)), transparent 70%),
+    var(--bg);
+}
+.work-top,
+.status-bar {
+  position: relative;
+  z-index: 6;
+  box-shadow: 0 1px 0 var(--glass-border, transparent), 0 6px 20px rgba(43, 29, 20, 0.08);
+}
+.work-top h1 {
+  font-size: 1.15rem;
+}
+.piece-tabs button {
+  transition: background 0.2s, color 0.2s, border-color 0.2s, transform 0.2s;
+}
+.piece-tabs button:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.piece-tabs button[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 10%, var(--paper));
+  box-shadow: inset 0 1px 0 var(--glass-border, transparent), 0 2px 8px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.piece-tabs circle {
+  transition: stroke-dasharray 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tabs button {
+  transition: color 0.2s, border-color 0.25s;
+}
+
+/* 카운터: 숫자가 바뀔 때 톡 튀어 오름 */
+.counter {
+  border: 0;
+  border-radius: 20px;
+  padding: 14px 8px 12px;
+  background:
+    radial-gradient(ellipse 80% 70% at 50% 30%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
+    linear-gradient(180deg, color-mix(in srgb, var(--paper) 100%, #fff), color-mix(in srgb, var(--paper) 88%, var(--panel-border)));
+  box-shadow:
+    inset 0 1px 0 var(--glass-border, #fff),
+    inset 0 0 0 1px color-mix(in srgb, var(--panel-border) 45%, transparent),
+    inset 0 -10px 24px color-mix(in srgb, var(--panel-border) 14%, transparent),
+    0 8px 22px rgba(43, 29, 20, 0.12);
+}
+.counter-num .cur {
+  display: inline-block;
+  font-family: var(--serif);
+  letter-spacing: -0.02em;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 78%, #fff), var(--accent) 55%, color-mix(in srgb, var(--accent) 82%, #000));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 3px 6px color-mix(in srgb, var(--accent) 28%, transparent));
+  animation: tick 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes tick {
+  0% {
+    transform: translateY(0.28em) scale(0.86);
+    opacity: 0;
+  }
+  60% {
+    opacity: 1;
+  }
+}
+.counter-btns .inc {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  font-family: var(--serif);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -6px 14px rgba(0, 0, 0, 0.22), 0 10px 22px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.counter-btns .inc::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.28) 50%, transparent 65%);
+  transform: translateX(-120%);
+  transition: transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.counter-btns .inc:hover::after,
+.counter-btns .inc:active::after {
+  transform: translateX(120%);
+}
+.counter-btns .inc:active:not(:disabled) {
+  transform: translateY(2px) scale(0.985);
+  box-shadow: inset 0 4px 10px rgba(0, 0, 0, 0.35), 0 2px 6px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.counter-btns .dec {
+  border-radius: 18px;
+}
+
+/* 지시 카드: 왼쪽 강조선 + 경고일 때 은은한 맥박 */
+.row-card {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 70%, var(--paper)), var(--bg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--panel-border) 45%, transparent), inset 0 1px 0 var(--glass-border, transparent), 0 6px 16px rgba(43, 29, 20, 0.08);
+}
+.row-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 50%, transparent));
+}
+.row-card.alert {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--warn-bg) 80%, #fff), var(--warn-bg));
+  box-shadow: inset 0 0 0 1px var(--warn), 0 8px 22px color-mix(in srgb, var(--warn) 30%, transparent);
+  animation: alert-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.row-card.alert::before {
+  background: var(--warn);
+}
+@keyframes alert-in {
+  from {
+    transform: scale(0.97);
+  }
+}
+.row-card .big {
+  font-family: var(--serif);
+  font-size: 1.5rem;
+}
+
+/* 시뮬레이션: 스포트라이트 받는 작업대 위의 편물 */
+.knit-scroll {
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 35%, color-mix(in srgb, #fff 75%, var(--paper)), transparent 72%),
+    radial-gradient(ellipse 120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, var(--panel-border) 22%, transparent)),
+    var(--paper);
+}
+.knit-scroll canvas {
+  border-radius: 3px;
+  filter: drop-shadow(0 22px 24px rgba(60, 30, 10, 0.3)) drop-shadow(0 3px 4px rgba(60, 30, 10, 0.3));
+}
+.scrub-bubble {
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 45%, transparent);
+  animation: pop-in 0.2s ease;
+}
+.chart-row .cell {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), inset 0 -1px 0 rgba(0, 0, 0, 0.1);
+  transition: opacity 0.3s, filter 0.2s;
+}
+.chart-row .ruler {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6), 0 6px 16px color-mix(in srgb, var(--accent) 40%, transparent);
+  animation: ruler 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes ruler {
+  from {
+    transform: translateY(100%);
+    opacity: 0.4;
+  }
+}
+.upcoming li {
+  transition: background 0.3s;
+}
+.upcoming li.soon {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 50%, transparent);
+}
+.menu {
+  animation: pop-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
+}
+.menu button {
+  transition: background 0.15s;
+}
+.compare svg {
+  filter: drop-shadow(0 12px 16px rgba(60, 30, 10, 0.2));
+}
+.cmp-fill {
+  transition: height 0.6s cubic-bezier(0.16, 1, 0.3, 1), y 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* 집중 모드: 어둠 속에서 숫자만 빛남 */
+.focus-mode {
+  background: radial-gradient(ellipse 70% 60% at 50% 42%, #33251a, #17100c 70%);
+  overflow: hidden;
+}
+.focus-mode.inc {
+  background: radial-gradient(ellipse 70% 60% at 50% 42%, #3d2c1c, #17100c 70%);
+}
+.focus-mode.dec {
+  background: radial-gradient(ellipse 70% 60% at 50% 42%, #3a1f1c, #17100c 70%);
+}
+.focus-glow {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: min(70vw, 620px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(232, 176, 74, 0.26), transparent 62%);
+  pointer-events: none;
+  animation: breathe 5s ease-in-out infinite;
+}
+@keyframes breathe {
+  50% {
+    transform: translate(-50%, -50%) scale(1.08);
+    opacity: 0.75;
+  }
+}
+.focus-num {
+  position: relative;
+  font-family: var(--serif);
+  background: linear-gradient(180deg, #ffe2a0, #e8b04a 55%, #b97f22);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 34px rgba(232, 176, 74, 0.45));
+  animation: tick 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.focus-card {
+  position: relative;
+  background: rgba(60, 44, 32, 0.55);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  border-color: rgba(255, 220, 170, 0.16);
+  box-shadow: inset 0 1px 0 rgba(255, 230, 190, 0.12), 0 18px 40px rgba(0, 0, 0, 0.4);
+}
+.focus-chart span {
+  border-radius: 4px;
+  margin: 1px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.celebrate .knot {
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.25));
+}

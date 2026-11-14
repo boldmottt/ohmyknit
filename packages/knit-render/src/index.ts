@@ -90,37 +90,122 @@ export function shade(hex: string, amount: number): string {
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
-function drawStitch(ctx: Ctx, x: number, y: number, w: number, h: number, color: string, kind: StitchKind) {
-  const dark = shade(color, -0.35);
-  const light = shade(color, 0.18);
+/* ───────────── 코 스프라이트 ─────────────
+ * 코 하나를 고해상도로 한 번만 그려 두고(실의 볼륨·꼬임·그림자) 필요한 크기로 찍어요.
+ * 색·종류마다 하나씩 캐시해서 수만 코도 빠르게 그립니다.
+ */
+const SPRITE_W = 64;
+const SPRITE_H = 56;
+type SpriteCanvas = HTMLCanvasElement | OffscreenCanvas;
+const sprites = new Map<string, SpriteCanvas>();
+
+function makeCanvas(w: number, h: number): SpriteCanvas | null {
+  if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
+  if (typeof document !== 'undefined') {
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    return c;
+  }
+  return null;
+}
+
+function paintLeg(g: Ctx, side: -1 | 1, color: string) {
+  const W = SPRITE_W;
+  const H = SPRITE_H;
+  const cx = W / 2 + side * W * 0.2;
+  const cy = H * 0.5;
+  g.save();
+  g.translate(cx, cy);
+  // 왼쪽 다리는 위가 왼쪽으로, 오른쪽 다리는 위가 오른쪽으로 → 아래가 모이는 V자
+  g.rotate(side * 0.5);
+  const rx = W * 0.235;
+  const ry = H * 0.6;
+  // 실 한 가닥의 둥근 볼륨: 가장자리는 어둡고 가운데 살짝 위가 밝게
+  const vol = g.createLinearGradient(-rx, 0, rx, 0);
+  vol.addColorStop(0, shade(color, -0.3));
+  vol.addColorStop(0.28, shade(color, 0));
+  vol.addColorStop(0.5, shade(color, 0.2));
+  vol.addColorStop(0.74, shade(color, -0.02));
+  vol.addColorStop(1, shade(color, -0.34));
+  g.beginPath();
+  g.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+  g.fillStyle = vol;
+  g.fill();
+  g.save();
+  g.clip();
+  // 위에서 비추는 빛 + 아래쪽 그늘
+  const lit = g.createLinearGradient(0, -ry, 0, ry);
+  lit.addColorStop(0, 'rgba(255,255,255,0.20)');
+  lit.addColorStop(0.45, 'rgba(255,255,255,0)');
+  lit.addColorStop(1, 'rgba(0,0,0,0.26)');
+  g.fillStyle = lit;
+  g.fillRect(-rx, -ry, rx * 2, ry * 2);
+  // 실의 꼬임(플라이) 결
+  g.lineCap = 'round';
+  for (let i = -4; i <= 4; i++) {
+    const y = (i / 4) * ry * 0.95;
+    g.beginPath();
+    g.moveTo(-rx, y + side * rx * 0.55);
+    g.quadraticCurveTo(0, y, rx, y - side * rx * 0.55);
+    g.strokeStyle = i % 2 ? 'rgba(0,0,0,0.13)' : 'rgba(255,255,255,0.12)';
+    g.lineWidth = 1.5;
+    g.stroke();
+  }
+  g.restore();
+  g.strokeStyle = shade(color, -0.55);
+  g.globalAlpha = 0.55;
+  g.lineWidth = 1.1;
+  g.stroke();
+  g.restore();
+}
+
+function stitchSprite(color: string, kind: StitchKind): SpriteCanvas | null {
+  const key = `${kind}${color}`;
+  const hit = sprites.get(key);
+  if (hit) return hit;
+  const c = makeCanvas(SPRITE_W, SPRITE_H);
+  const g = c?.getContext('2d') as Ctx | null;
+  if (!c || !g) return null;
+  const W = SPRITE_W;
+  const H = SPRITE_H;
+  // 코 사이 깊은 그늘 (원단이 비어 보이지 않게)
+  g.fillStyle = shade(color, -0.4);
+  g.beginPath();
+  g.ellipse(W / 2, H / 2, W * 0.5, H * 0.5, 0, 0, Math.PI * 2);
+  g.fill();
   if (kind === 'purl') {
-    ctx.fillStyle = shade(color, -0.12);
-    ctx.beginPath();
-    ctx.ellipse(x + w / 2, y + h / 2, w * 0.48, h * 0.32, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = dark;
-    ctx.lineWidth = Math.max(0.4, w * 0.06);
-    ctx.stroke();
+    // 안뜨기: 가로로 누운 혹
+    const vol = g.createLinearGradient(0, H * 0.16, 0, H * 0.84);
+    vol.addColorStop(0, shade(color, -0.3));
+    vol.addColorStop(0.4, shade(color, 0.14));
+    vol.addColorStop(1, shade(color, -0.42));
+    g.beginPath();
+    g.ellipse(W / 2, H / 2, W * 0.47, H * 0.3, 0, 0, Math.PI * 2);
+    g.fillStyle = vol;
+    g.fill();
+    g.strokeStyle = shade(color, -0.55);
+    g.globalAlpha = 0.5;
+    g.lineWidth = 1.1;
+    g.stroke();
+    g.globalAlpha = 1;
+  } else {
+    paintLeg(g, -1, color);
+    paintLeg(g, 1, color);
+  }
+  sprites.set(key, c);
+  return c;
+}
+
+function drawStitch(ctx: Ctx, x: number, y: number, w: number, h: number, color: string, kind: StitchKind) {
+  const sprite = stitchSprite(color, kind);
+  if (sprite) {
+    // 위아래 코가 살짝 겹쳐야 실제 편물처럼 촘촘해 보여요
+    ctx.drawImage(sprite as CanvasImageSource, x - w * 0.04, y - h * 0.12, w * 1.08, h * 1.24);
     return;
   }
-  for (const side of [-1, 1] as const) {
-    const cx = x + w / 2 + side * w * 0.2;
-    ctx.beginPath();
-    // 왼쪽 다리는 위가 왼쪽으로, 오른쪽 다리는 위가 오른쪽으로 → 아래가 모이는 V자
-    ctx.ellipse(cx, y + h * 0.5, w * 0.23, h * 0.56, side * 0.5, 0, Math.PI * 2);
-    ctx.fillStyle = color;
-    ctx.fill();
-    ctx.strokeStyle = dark;
-    ctx.lineWidth = Math.max(0.4, w * 0.06);
-    ctx.stroke();
-    // 실의 결: 밝은 줄 하나
-    ctx.beginPath();
-    ctx.moveTo(cx + side * w * 0.06, y + h * 0.2);
-    ctx.lineTo(cx - side * w * 0.05, y + h * 0.8);
-    ctx.strokeStyle = light;
-    ctx.lineWidth = Math.max(0.3, w * 0.05);
-    ctx.stroke();
-  }
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
 }
 
 export type FabricOptions = {
@@ -271,7 +356,8 @@ export function stitchColor(yarn: YarnColor, row: number, col: number): string {
   const r1 = (h % 1000) / 1000;
   const r2 = ((h >>> 10) % 1000) / 1000;
   const base = yarn.hex2 && yarn.heather && r1 < yarn.heather * 0.7 ? yarn.hex2 : yarn.hex;
-  return shade(base, (r2 - 0.5) * (yarn.heather ? 0.16 : 0.08));
+  // 명암은 5단계로만 (스프라이트 캐시가 작게 유지되도록)
+  return shade(base, ((Math.floor(r2 * 5) + 0.5) / 5 - 0.5) * (yarn.heather ? 0.16 : 0.08));
 }
 
 /* ───────────── 차트 미리보기 (디자인 스튜디오) ───────────── */

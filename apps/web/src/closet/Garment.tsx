@@ -60,6 +60,23 @@ export function Garment({ id, palette, progress, selected, swing, label, onClick
           <clipPath id={clip}>
             <path d={shape} />
           </clipPath>
+          <linearGradient id="g-vol" x1="0" x2="1" y1="0" y2="0">
+            <stop offset="0" stopColor="#000" stopOpacity=".3" />
+            <stop offset=".2" stopColor="#000" stopOpacity=".16" />
+            <stop offset=".3" stopColor="#000" stopOpacity=".05" />
+            <stop offset=".5" stopColor="#fff" stopOpacity=".14" />
+            <stop offset=".7" stopColor="#000" stopOpacity=".05" />
+            <stop offset=".8" stopColor="#000" stopOpacity=".16" />
+            <stop offset="1" stopColor="#000" stopOpacity=".18" />
+          </linearGradient>
+          <linearGradient id="g-top" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stopColor="#fff" stopOpacity=".16" />
+            <stop offset=".4" stopColor="#fff" stopOpacity="0" />
+            <stop offset="1" stopColor="#000" stopOpacity=".18" />
+          </linearGradient>
+          <pattern id="g-rib" patternUnits="userSpaceOnUse" width="6" height="12">
+            <rect width="3" height="12" fill="#000" opacity=".28" />
+          </pattern>
           <pattern id={`${clip}-t`} patternUnits="userSpaceOnUse" width="168" height="241">
             <image href={tex} width="168" height="241" />
           </pattern>
@@ -67,9 +84,16 @@ export function Garment({ id, palette, progress, selected, swing, label, onClick
         <path d={shape} className="ghost-shape" />
         <g clipPath={`url(#${clip})`}>
           <rect x="0" y={fillTop} width="200" height={220 - fillTop} fill={`url(#${clip}-t)`} />
+          {/* 고무단: 밑단과 소매 끝 */}
+          <rect x="40" y="198" width="120" height="12" fill="url(#g-rib)" opacity={fillTop < 198 ? 1 : 0} />
+          {/* 옷의 볼륨: 가운데가 밝고 옆선과 소매 안쪽이 어두움 */}
+          <rect x="0" y={fillTop} width="200" height={220 - fillTop} fill="url(#g-vol)" />
+          <rect x="0" y={fillTop} width="200" height={220 - fillTop} fill="url(#g-top)" />
+          <path d="M40 98 L40 210 M160 98 L160 210" className="seam" />
           <line x1="0" x2="200" y1={fillTop} y2={fillTop} className="needle-line" />
         </g>
         <path d={shape} className="outline" />
+        <path d="M70 40 Q100 56 130 40" className="collar" />
       </svg>
     </button>
   );

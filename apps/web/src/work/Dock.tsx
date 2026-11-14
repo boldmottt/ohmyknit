@@ -53,7 +53,7 @@ export function Dock({ piece, view, projectId, onInc, onDec, onTool, stitchTrack
       <div className="counter">
         <div className="muted small">현재 단</div>
         <div className="counter-num num" aria-live="polite">
-          <span className="cur">{Math.min(view.completedRows + 1, piece.totalRows)}</span>
+          <span className="cur" key={view.completedRows}>{Math.min(view.completedRows + 1, piece.totalRows)}</span>
           <span className="tot"> / {piece.totalRows}</span>
         </div>
         <div className="muted small num">{view.completedRows}단 완료</div>

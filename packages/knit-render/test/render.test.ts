@@ -76,7 +76,8 @@ describe('차트 미리보기', () => {
     const y = { name: '보라', hex: '#B07A8C', hex2: '#6E4A6A', heather: 0.8 };
     expect(stitchColor(y, 3, 7)).toBe(stitchColor(y, 3, 7));
     const colors = new Set(Array.from({ length: 200 }, (_, i) => stitchColor(y, i, i * 3)));
-    expect(colors.size).toBeGreaterThan(20);
+    expect(colors.size).toBeGreaterThanOrEqual(8); // 두 색 × 명암 5단계
+    expect(colors.size).toBeLessThanOrEqual(10);
     const plain = stitchColor({ name: '', hex: '#808080' }, 1, 1);
     const v = Number.parseInt(plain.slice(1, 3), 16);
     expect(Math.abs(v - 128)).toBeLessThan(12);

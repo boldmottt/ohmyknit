@@ -576,3 +576,566 @@
     gap: 6px;
   }
 }
+
+/* ═══════════ 장면 연출: 조명 · 깊이 · 질감 ═══════════ */
+.closet-room {
+  --mx: 0;
+  --my: 0;
+  position: relative;
+  isolation: isolate;
+  background: #2a1c14;
+  overflow: hidden;
+}
+.scene {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+/* 벽: 은은한 줄무늬 벽지 + 아래 징두리 판 */
+.scene-wall {
+  position: absolute;
+  inset: 0 0 16% 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 240, 210, 0.05) 0 2px, transparent 2px 54px),
+    linear-gradient(180deg, #7d6248, #a5855f 55%, #8a6c4c);
+}
+.scene-wall::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 9%;
+  background: linear-gradient(180deg, #5b3d27, #4a301e);
+  box-shadow: inset 0 3px 0 rgba(255, 220, 170, 0.18), inset 0 -4px 8px rgba(0, 0, 0, 0.35);
+}
+/* 위에서 떨어지는 따뜻한 조명 + 화면 가장자리 어둡게 */
+.scene-lamp {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 58% 70% at calc(50% + var(--mx) * 3%) calc(30% + var(--my) * 2%), rgba(255, 226, 170, 0.62), rgba(255, 200, 130, 0.16) 48%, transparent 72%),
+    radial-gradient(ellipse 120% 100% at 50% 40%, transparent 42%, rgba(18, 10, 6, 0.78) 100%);
+  mix-blend-mode: normal;
+}
+.scene-floor {
+  position: absolute;
+  left: -20%;
+  right: -20%;
+  bottom: 0;
+  height: 16%;
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.28) 0 2px, transparent 2px 120px),
+    linear-gradient(180deg, #5d3f29, #2c1c12);
+  transform: perspective(600px) rotateX(38deg);
+  transform-origin: top;
+  box-shadow: inset 0 30px 60px rgba(0, 0, 0, 0.5);
+}
+.scene-dust i {
+  position: absolute;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: rgba(255, 236, 200, 0.75);
+  filter: blur(0.6px);
+  opacity: 0;
+  animation: dust var(--d) linear infinite;
+}
+@keyframes dust {
+  0% {
+    transform: translate3d(0, 20px, 0);
+    opacity: 0;
+  }
+  20%,
+  80% {
+    opacity: 0.55;
+  }
+  100% {
+    transform: translate3d(40px, -90px, 0);
+    opacity: 0;
+  }
+}
+
+.closet-head {
+  position: relative;
+  z-index: 4;
+  color: #f8ecd8;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.55);
+}
+.closet-head h1 {
+  font-size: 1.7rem;
+  letter-spacing: 0.14em;
+  background: linear-gradient(180deg, #fff4dc, #e1b877);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
+}
+.closet-nav a {
+  color: #f8ecd8;
+  padding: 0 10px;
+  border-radius: 999px;
+  transition: background 0.2s;
+}
+.closet-nav a:hover {
+  background: rgba(255, 240, 210, 0.14);
+}
+.closet-stage {
+  padding-bottom: 5vh;
+}
+
+/* 옷장: 포인터를 따라 아주 조금 기울어지는 입체감 */
+.wardrobe {
+  transform: perspective(1600px) rotateY(calc(var(--mx) * 1.6deg)) rotateX(calc(var(--my) * -1deg));
+  transition: transform 0.5s var(--ease-out, ease-out);
+  filter: drop-shadow(0 40px 36px rgba(0, 0, 0, 0.55)) drop-shadow(0 6px 8px rgba(0, 0, 0, 0.4));
+  animation: wardrobe-in 0.9s var(--ease-out, ease-out) both;
+}
+@keyframes wardrobe-in {
+  from {
+    opacity: 0;
+    transform: perspective(1600px) translateY(28px) scale(0.97);
+  }
+}
+/* 나뭇결: 노이즈를 길게 늘인 결을 원목 색 위에 겹침 */
+.crown,
+.door,
+.drawer,
+.cabinet {
+  background-blend-mode: multiply, overlay, normal;
+}
+.door::before,
+.crown::before,
+.drawer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.5;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='600'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.012 .32' numOctaves='3' seed='4'/%3E%3CfeColorMatrix values='0 0 0 0 .25  0 0 0 0 .12  0 0 0 0 .04  0 0 0 1.4 -.35'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23w)'/%3E%3C/svg%3E");
+  background-size: 300px 600px;
+}
+.crown {
+  position: relative;
+  background: linear-gradient(180deg, #a06b3c, #7a4c28 60%, #5e391d);
+  box-shadow: inset 0 2px 0 rgba(255, 220, 170, 0.35), inset 0 -8px 10px rgba(0, 0, 0, 0.3), 0 6px 10px rgba(0, 0, 0, 0.35);
+}
+.door {
+  background: linear-gradient(100deg, #6e4525, #94602f 45%, #7d4f28 70%, #5f3a1d);
+  box-shadow: inset 0 0 0 2px rgba(255, 215, 160, 0.12), inset 0 0 40px rgba(0, 0, 0, 0.35);
+  transition: transform 1.6s cubic-bezier(0.6, 0.02, 0.2, 1), filter 1.6s;
+}
+.door.right {
+  background: linear-gradient(260deg, #6e4525, #94602f 45%, #7d4f28 70%, #5f3a1d);
+}
+.phase-opening .door,
+.phase-open .door {
+  filter: brightness(0.55);
+}
+.panel-carve {
+  border: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.16), rgba(255, 225, 180, 0.08));
+  box-shadow:
+    inset 3px 3px 6px rgba(0, 0, 0, 0.5),
+    inset -2px -2px 3px rgba(255, 220, 170, 0.22),
+    0 0 0 7px rgba(125, 80, 40, 0.55),
+    0 0 0 9px rgba(0, 0, 0, 0.3),
+    2px 2px 0 9px rgba(255, 220, 170, 0.12);
+}
+.knob {
+  width: 18px;
+  height: 46px;
+  margin-top: -23px;
+  border-radius: 9px;
+  background: linear-gradient(90deg, #6b5226, #f7e2a4 35%, #c9a45c 60%, #5f4720);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.55), inset 0 0 2px rgba(255, 255, 255, 0.6);
+}
+.drawer {
+  background: linear-gradient(180deg, #8f5c2e, #6c4323);
+  box-shadow: inset 0 2px 0 rgba(255, 220, 170, 0.25), inset 0 -10px 16px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.drawer-handle {
+  position: relative;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.7);
+}
+.feet {
+  background: linear-gradient(90deg, #3c2413 0 40px, transparent 40px calc(100% - 40px), #3c2413 calc(100% - 40px));
+}
+
+/* 옷장 안: 문이 열리면 안쪽 조명이 켜짐 */
+.inside {
+  background: linear-gradient(180deg, #1c110a, #3a2415 45%, #22140c);
+  box-shadow: inset 0 18px 50px rgba(0, 0, 0, 0.85), inset 0 -30px 40px rgba(0, 0, 0, 0.5);
+}
+.inside-light {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 70% 60% at 50% 0%, rgba(255, 214, 150, 0.5), transparent 70%),
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.22) 0 2px, transparent 2px 90px);
+  opacity: 0;
+  transition: opacity 1.4s ease 0.5s;
+}
+.phase-opening .inside-light,
+.phase-open .inside-light {
+  opacity: 1;
+}
+.rail {
+  background: linear-gradient(180deg, #fff1c2, #d3ab62 40%, #7a5d2a);
+  box-shadow: 0 6px 10px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+.hanger {
+  stroke: #dcc48c;
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.5));
+}
+
+/* 옷: 걸려 있는 무게감과 호버 반응 */
+.hanger-slot {
+  animation: hang-in 0.8s var(--ease-spring, ease-out) both;
+}
+.hanger-slot:nth-child(1) { animation-delay: 0.95s; }
+.hanger-slot:nth-child(2) { animation-delay: 1.05s; }
+.hanger-slot:nth-child(3) { animation-delay: 1.15s; }
+.hanger-slot:nth-child(4) { animation-delay: 1.25s; }
+.hanger-slot:nth-child(n + 5) { animation-delay: 1.35s; }
+.phase-open .hanger-slot { animation-delay: 0s; }
+@keyframes hang-in {
+  from {
+    opacity: 0;
+    transform: translateY(-26px) rotate(-4deg);
+  }
+}
+.garment svg {
+  filter: drop-shadow(0 14px 12px rgba(0, 0, 0, 0.55));
+  transition: filter 0.3s;
+}
+.garment:hover {
+  transform: rotate(-2.5deg) translateY(-4px) scale(1.03);
+}
+.garment:hover svg,
+.garment.selected svg {
+  filter: drop-shadow(0 22px 18px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 14px rgba(255, 210, 140, 0.45));
+}
+.garment.selected {
+  filter: none;
+}
+.seam {
+  stroke: rgba(0, 0, 0, 0.35);
+  stroke-width: 1.5;
+  fill: none;
+}
+.collar {
+  fill: none;
+  stroke: rgba(0, 0, 0, 0.45);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.needle-line {
+  stroke: #f3c768;
+  stroke-width: 3;
+  filter: drop-shadow(0 0 4px rgba(255, 200, 100, 0.9));
+}
+.garment-tag {
+  background: linear-gradient(180deg, #fff8e8, #f1e3c4);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.45), inset 0 1px 0 #fff;
+  border-radius: 4px 10px 10px 4px;
+  font-family: var(--serif);
+}
+
+/* 네임태그: 크라프트 종이 꼬리표 */
+.nametag {
+  background: linear-gradient(160deg, #fff6e2, #edd9b2);
+  box-shadow: 0 14px 24px rgba(0, 0, 0, 0.5), 0 2px 3px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.6), inset 0 0 0 3px rgba(176, 141, 87, 0.5);
+  transition: transform 0.35s var(--ease-spring, ease-out), box-shadow 0.3s;
+  animation: tag-sway 5s ease-in-out infinite, pop-in 0.7s var(--ease-spring, ease-out) both;
+}
+.nametag:nth-of-type(2) { animation-delay: -1.2s, 0.1s; }
+.nametag:nth-of-type(3) { animation-delay: -2.4s, 0.2s; }
+.nametag:hover {
+  transform: translateY(-6px) rotate(-2deg) scale(1.04);
+  box-shadow: 0 24px 34px rgba(0, 0, 0, 0.55), inset 0 0 0 1px rgba(255, 255, 255, 0.6), inset 0 0 0 3px rgba(176, 141, 87, 0.7);
+}
+.nametag.small-tag {
+  animation: none;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4), inset 0 0 0 2px rgba(176, 141, 87, 0.5);
+}
+.tag-hole {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6), 0 0 0 2px rgba(176, 141, 87, 0.7);
+}
+.tag-name {
+  font-size: 1.45rem;
+}
+
+/* 실 선반 */
+.shelf {
+  border-bottom: 0;
+  position: relative;
+  box-shadow: none;
+}
+.shelf::after {
+  content: '';
+  position: absolute;
+  left: -6px;
+  right: -6px;
+  bottom: -12px;
+  height: 12px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #9a6634, #5f3a1d);
+  box-shadow: 0 12px 14px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 220, 170, 0.4);
+}
+.yarn {
+  width: 58px;
+  height: 58px;
+  background:
+    repeating-linear-gradient(28deg, transparent 0 4px, rgba(255, 255, 255, 0.2) 4px 5px, transparent 5px 8px, rgba(0, 0, 0, 0.16) 8px 9px),
+    repeating-linear-gradient(-52deg, transparent 0 6px, rgba(0, 0, 0, 0.14) 6px 7px),
+    radial-gradient(circle at 36% 28%, color-mix(in srgb, var(--yarn) 55%, #fff), var(--yarn) 52%, color-mix(in srgb, var(--yarn) 45%, #000));
+  box-shadow: inset -6px -8px 14px rgba(0, 0, 0, 0.4), 0 6px 8px rgba(0, 0, 0, 0.45);
+  transition: transform 0.4s var(--ease-spring, ease-out);
+}
+.yarn-shelf {
+  pointer-events: auto;
+  transform: translateX(calc(var(--mx) * -6px));
+  transition: transform 0.6s var(--ease-out, ease-out);
+}
+.yarn:hover {
+  transform: translateY(-5px) rotate(12deg);
+}
+.tag-hint {
+  font-family: var(--serif);
+  font-size: 1.1rem;
+}
+.empty-hanger span {
+  backdrop-filter: blur(2px);
+  background: rgba(255, 236, 200, 0.05);
+  transition: background 0.25s, transform 0.25s;
+}
+.empty-hanger:hover span {
+  background: rgba(255, 236, 200, 0.14);
+  transform: scale(1.04);
+}
+.detail {
+  color: var(--ink);
+}
+.big-pct {
+  font-family: var(--serif);
+  font-size: 3rem;
+  line-height: 1.1;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 80%, #fff), var(--accent));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* 나뭇결 방향: 문은 세로결, 상판·서랍은 가로결. 이어 붙는 자리가 보이지 않게 stitch */
+.crown::before,
+.drawer::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='200'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.01 .3' numOctaves='3' seed='4' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .25  0 0 0 0 .12  0 0 0 0 .04  0 0 0 1.4 -.35'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23w)'/%3E%3C/svg%3E");
+  background-size: 600px 200px;
+}
+.door::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='720'%3E%3Cfilter id='w'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.22 .008' numOctaves='3' seed='9' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .25  0 0 0 0 .12  0 0 0 0 .04  0 0 0 1.5 -.4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23w)'/%3E%3C/svg%3E");
+  background-size: 240px 720px;
+}
+
+/* 열린 문: 사라지지 않고 양옆으로 활짝 젖혀진 모습 */
+.door {
+  backface-visibility: visible;
+}
+.phase-opening .door.left,
+.phase-open .door.left {
+  transform: rotateY(-101deg);
+}
+.phase-opening .door.right,
+.phase-open .door.right {
+  transform: rotateY(101deg);
+}
+.phase-opening .door,
+.phase-open .door {
+  pointer-events: none;
+  filter: brightness(0.5);
+}
+.phase-opening .door > *,
+.phase-open .door > * {
+  opacity: 0;
+  transition: opacity 0.6s;
+}
+
+/* 닫힌 상태: 꼬리표는 손잡이 위쪽에 걸림 */
+.nametags {
+  align-content: flex-start;
+  padding-top: clamp(40px, 12vh, 120px);
+}
+.tag-hint {
+  color: #fff3dc;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.75);
+}
+.add-tag {
+  backdrop-filter: blur(6px);
+}
+
+/* 안쪽 아래 선반 */
+.cabinet {
+  min-height: min(64vh, 600px);
+}
+.hanger-slot {
+  width: clamp(150px, 19vw, 230px);
+}
+.inside-shelf {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 21%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 18px;
+  padding: 0 28px 6px;
+  border-top: 10px solid #5b3a20;
+  box-shadow: inset 0 14px 22px rgba(0, 0, 0, 0.6), 0 -1px 0 rgba(255, 215, 160, 0.25);
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.35), rgba(0, 0, 0, 0.1));
+  opacity: 0;
+  transition: opacity 1.2s ease 0.7s;
+}
+.phase-opening .inside-shelf,
+.phase-open .inside-shelf {
+  opacity: 1;
+}
+.folded {
+  width: 92px;
+  height: 46px;
+  border-radius: 8px 8px 3px 3px;
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.14) 0 2px, transparent 2px 5px),
+    linear-gradient(180deg, color-mix(in srgb, var(--c) 80%, #fff) 0 30%, var(--c) 30% 34%, color-mix(in srgb, var(--c) 86%, #000) 34% 64%, color-mix(in srgb, var(--c) 60%, #000) 64% 68%, color-mix(in srgb, var(--c) 74%, #000) 68%);
+  box-shadow: 0 6px 8px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.folded.tall {
+  height: 62px;
+}
+.basket {
+  position: relative;
+  width: 120px;
+  height: 52px;
+  border-radius: 6px 6px 16px 16px;
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.22) 0 2px, transparent 2px 9px),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.18) 0 2px, transparent 2px 9px),
+    linear-gradient(180deg, #c79a5b, #8a6131);
+  box-shadow: 0 6px 8px rgba(0, 0, 0, 0.55), inset 0 2px 0 rgba(255, 230, 180, 0.4);
+}
+.basket i {
+  position: absolute;
+  bottom: 62%;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background:
+    repeating-linear-gradient(28deg, transparent 0 3px, rgba(255, 255, 255, 0.2) 3px 4px, transparent 4px 7px, rgba(0, 0, 0, 0.16) 7px 8px),
+    radial-gradient(circle at 36% 28%, color-mix(in srgb, var(--yarn) 55%, #fff), var(--yarn) 52%, color-mix(in srgb, var(--yarn) 45%, #000));
+  box-shadow: inset -4px -6px 10px rgba(0, 0, 0, 0.4);
+  z-index: -1;
+}
+.basket i:nth-child(1) { left: 6px; }
+.basket i:nth-child(2) { left: 40px; bottom: 74%; }
+.basket i:nth-child(3) { left: 74px; }
+.hangers {
+  bottom: 21%;
+}
+@media (max-width: 900px) {
+  .inside-shelf .folded.tall,
+  .inside-shelf .folded:nth-child(2) {
+    display: none;
+  }
+}
+
+/* 열린 문이 화면을 덮지 않게: 원근을 약하게 해서 옆으로 얇게 젖혀진 모습으로 */
+.cabinet {
+  perspective: 5000px;
+}
+.phase-opening .door.left,
+.phase-open .door.left {
+  transform: rotateY(-97deg);
+}
+.phase-opening .door.right,
+.phase-open .door.right {
+  transform: rotateY(97deg);
+}
+.phase-opening .door.left,
+.phase-open .door.left {
+  transform: rotateY(-94deg);
+}
+.phase-opening .door.right,
+.phase-open .door.right {
+  transform: rotateY(94deg);
+}
+.basket {
+  isolation: isolate;
+}
+
+@media (max-width: 600px) {
+  .closet-head h1 {
+    font-size: 1.25rem;
+    letter-spacing: 0.08em;
+  }
+  .closet-nav a {
+    padding: 0 5px;
+    font-size: 0.9rem;
+  }
+  .scene-floor {
+    height: 9%;
+  }
+  .scene-wall {
+    inset: 0 0 9% 0;
+  }
+}
+
+/* 모던 스킨: 같은 장면을 밝은 애쉬 원목과 서늘한 벽으로 */
+:root[data-skin='modern'] .scene {
+  filter: grayscale(0.9) brightness(1.55) contrast(0.92);
+}
+:root[data-skin='modern'] .crown,
+:root[data-skin='modern'] .door,
+:root[data-skin='modern'] .drawer,
+:root[data-skin='modern'] .feet,
+:root[data-skin='modern'] .shelf::after {
+  filter: grayscale(0.75) brightness(1.5);
+}
+:root[data-skin='modern'] .phase-opening .door,
+:root[data-skin='modern'] .phase-open .door {
+  filter: grayscale(0.75) brightness(0.9);
+}
+:root[data-skin='modern'] .cabinet {
+  background: #b9b3aa;
+  border-color: #9a948b;
+}
+:root[data-skin='modern'] .inside {
+  background: linear-gradient(180deg, #2a2a2e, #45454b 45%, #2c2c30);
+}
+:root[data-skin='modern'] .closet-head h1 {
+  background: linear-gradient(180deg, #fff, #cfd4dc);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+:root[data-skin='modern'] .closet-head,
+:root[data-skin='modern'] .closet-nav a {
+  color: #20242c;
+  text-shadow: none;
+}
+:root[data-skin='modern'] .closet-head h1 {
+  background: none;
+  color: #20242c;
+  filter: none;
+}
+:root[data-skin='modern'] .empty-hanger {
+  color: #e8eaee;
+}
+:root[data-skin='modern'] .drawer {
+  border-color: #9a948b;
+}

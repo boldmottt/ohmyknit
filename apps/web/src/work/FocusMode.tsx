@@ -103,7 +103,8 @@ export function FocusMode({ piece, view, palette, progress, activeMs, onInc, onD
           나가기 (F)
         </button>
       </div>
-      <div className="focus-num num">{view.done ? '완성!' : Math.min(view.completedRows + 1, piece.totalRows)}</div>
+      <div className="focus-glow" aria-hidden="true" />
+      <div className="focus-num num" key={view.completedRows}>{view.done ? '완성!' : Math.min(view.completedRows + 1, piece.totalRows)}</div>
       <div className="focus-tot num">/ {piece.totalRows} 단</div>
       {r && (
         <div className="focus-card">

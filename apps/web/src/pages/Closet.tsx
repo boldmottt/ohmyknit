@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type Profile, type ProjectSummary } from '../api';
@@ -7,6 +7,15 @@ import { daysSince, fmtDate, getStoredProfile, Modal, pct, reducedMotion, relDay
 import '../closet/closet.css';
 
 type Phase = 'closed' | 'opening' | 'open';
+
+/** 먼지 입자 위치 (고정 값이라 다시 그려도 튀지 않음) */
+const DUST = Array.from({ length: 16 }, (_, i) => ({
+  x: (i * 37 + 11) % 100,
+  y: (i * 53 + 7) % 78,
+  d: 14 + ((i * 7) % 12),
+  s: 2 + (i % 3),
+  o: (i * 3.1) % 20,
+}));
 
 /** 옷장 홈 (기획서 F1, 2.5 "/") */
 export function Closet() {
@@ -26,6 +35,21 @@ export function Closet() {
     }
   }, [profiles.data, profileId, profile]);
 
+  // 포인터를 따라 조명과 옷장이 아주 조금 움직이는 깊이감 (동작 줄이기면 끔)
+  const room = useRef<HTMLDivElement>(null);
+  const raf = useRef(0);
+  function onPointerMove(e: React.PointerEvent) {
+    if (e.pointerType !== 'mouse' || reducedMotion()) return;
+    const { clientX, clientY } = e;
+    cancelAnimationFrame(raf.current);
+    raf.current = requestAnimationFrame(() => {
+      const el = room.current;
+      if (!el) return;
+      el.style.setProperty('--mx', ((clientX / window.innerWidth) * 2 - 1).toFixed(3));
+      el.style.setProperty('--my', ((clientY / window.innerHeight) * 2 - 1).toFixed(3));
+    });
+  }
+
   function open(p: Profile) {
     setStoredProfile(p.id);
     setProfileId(p.id);
@@ -42,7 +66,18 @@ export function Closet() {
   }
 
   return (
-    <div className={`closet-room phase-${phase}`}>
+    <div className={`closet-room phase-${phase}`} ref={room} onPointerMove={onPointerMove}>
+      {/* 장면: 벽을 비추는 조명, 바닥, 떠다니는 먼지 */}
+      <div className="scene" aria-hidden="true">
+        <div className="scene-wall" />
+        <div className="scene-lamp" />
+        <div className="scene-floor" />
+        <div className="scene-dust">
+          {DUST.map((d, i) => (
+            <i key={i} style={{ left: `${d.x}%`, top: `${d.y}%`, ['--d' as string]: `${d.d}s`, ['--s' as string]: `${d.s}px`, animationDelay: `${-d.o}s` }} />
+          ))}
+        </div>
+      </div>
       <header className="closet-head">
         <h1 className="serif">뜨개옷장</h1>
         {phase !== 'closed' && profile && (
@@ -64,6 +99,14 @@ export function Closet() {
           <div className="crown" aria-hidden="true" />
           <div className="cabinet">
             <div className="inside">
+              <div className="inside-light" aria-hidden="true" />
+              {/* 아래 선반: 개어 둔 니트와 실 바구니 (장식) */}
+              <div className="inside-shelf" aria-hidden="true">
+                <span className="folded" style={{ ['--c' as string]: '#7A1F2B' }} />
+                <span className="folded" style={{ ['--c' as string]: '#D9B45A' }} />
+                <span className="folded tall" style={{ ['--c' as string]: '#9CAF88' }} />
+                <span className="basket"><i style={{ ['--yarn' as string]: '#E8A6A8' }} /><i style={{ ['--yarn' as string]: '#F3EBDD' }} /><i style={{ ['--yarn' as string]: '#2C7A7B' }} /></span>
+              </div>
               {phase !== 'closed' && profileId && <Rail profileId={profileId} returned={returned} />}
             </div>
             <div className="door left" aria-hidden={phase === 'open'}>
