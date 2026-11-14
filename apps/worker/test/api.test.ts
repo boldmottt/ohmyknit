@@ -229,3 +229,42 @@ describe('파일과 AI', () => {
     expect((await call('GET', '/api/ai/status')).data.enabled).toBe(false);
   });
 });
+
+describe('실 라이브러리', () => {
+  it('기본 색: 검색·색 계열·정렬·페이지', async () => {
+    const all = await call('GET', '/api/yarns?per=60');
+    expect(all.data.total).toBeGreaterThan(40);
+    expect(all.data.brands).toContain('기본 DK 울');
+    const orange = await call('GET', `/api/yarns?family=${encodeURIComponent('주황')}`);
+    expect(orange.data.items.length).toBeGreaterThan(0);
+    expect(orange.data.items.every((y: any) => y.family === '주황')).toBe(true);
+    const q = await call('GET', `/api/yarns?q=${encodeURIComponent('호박')}`);
+    expect(q.data.items.map((y: any) => y.name)).toContain('호박');
+    const p2 = await call('GET', '/api/yarns?per=10&page=2');
+    expect(p2.data.items).toHaveLength(10);
+    expect(p2.data.page).toBe(2);
+  });
+
+  it('내 실 등록 → 맨 앞(브랜드 순)에 나오고 지울 수 있음', async () => {
+    const { profileId } = await setup();
+    const bad = await call('POST', `/api/profiles/${profileId}/yarns`, { name: '보라', hex: 'purple' });
+    expect(bad.status).toBe(400);
+    const { data } = await call('POST', `/api/profiles/${profileId}/yarns`, {
+      brand: '우리집 실', name: '들꽃 보라', hex: '#b07a8c', hex2: '#7E4E6A', heather: 0.7, gramsOwned: 50,
+    });
+    const list = await call('GET', `/api/yarns?profileId=${profileId}&sort=brand`);
+    expect(list.data.items[0].id).toBe(data.id);
+    expect(list.data.items[0].hex).toBe('#B07A8C');
+    expect(list.data.items[0].family).toBe('분홍');
+    const mine = await call('GET', `/api/yarns?profileId=${profileId}&source=mine`);
+    expect(mine.data.total).toBe(1);
+    await call('DELETE', `/api/yarns/${data.id}`);
+    expect((await call('GET', `/api/yarns?profileId=${profileId}&source=mine`)).data.total).toBe(0);
+  });
+
+  it('비니 샘플 도안 (정수리 차트)', async () => {
+    const { data } = await call('POST', '/api/patterns/sample?which=beanie');
+    const p = await call('GET', `/api/patterns/${data.id}`);
+    expect(p.data.title).toBe('호박 소용돌이 비니');
+  });
+});

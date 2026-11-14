@@ -118,10 +118,10 @@ importers:
       '@knitcloset/gauge-engine':
         specifier: workspace:*
         version: link:../gauge-engine
-    devDependencies:
       '@knitcloset/pattern-schema':
         specifier: workspace:*
         version: link:../pattern-schema
+    devDependencies:
       typescript:
         specifier: ^5.6.3
         version: 5.9.3

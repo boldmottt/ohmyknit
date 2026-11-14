@@ -36,6 +36,27 @@ export function resolveSize(value: SizeValue, size: string): number {
   return v;
 }
 
+/** 차트 칸 값: 0 이상 = 팔레트 번호, -1 = 코 없음 (줄임으로 사라진 자리) */
+export const NO_STITCH = -1;
+const NO_STITCH_VALUE = -1;
+
+/**
+ * 실 한 가지. hex2·heather가 있으면 두 색이 섞인 얼룩실(헤더·마알)로 그려요.
+ */
+export const Yarn = z.object({
+  name: z.string(),
+  hex: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+  brand: z.string().optional(),
+  /** 섞인 두 번째 색 */
+  hex2: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  /** 얼룩 정도 0(단색) ~ 1(많이 섞임) */
+  heather: z.number().min(0).max(1).optional(),
+  /** 실 보관함 id */
+  yarnId: z.string().optional(),
+  photoKey: z.string().optional(),
+});
+export type Yarn = z.infer<typeof Yarn>;
+
 export const Gauge = z.object({
   /** 10cm 안의 코 수 */
   st: z.number().positive(),
@@ -52,11 +73,29 @@ export const Chart = z.object({
    * 각 줄은 화면에 보이는 대로 왼쪽→오른쪽.
    * 실제 뜨기는 오른쪽→왼쪽으로 읽습니다.
    */
-  grid: z.array(z.array(z.number().int().nonnegative())).min(1),
+  grid: z.array(z.array(z.number().int().min(NO_STITCH_VALUE))).min(1),
   /** 반복 단위 너비(코). 기본 = 차트 너비 */
   repeatW: z.number().int().positive().optional(),
+  /** 디자인 스튜디오 미리보기 설정 (뜨기에는 영향 없음) */
+  preview: z
+    .object({
+      repeatsX: z.number().int().min(1).max(40).default(5),
+      repeatsY: z.number().int().min(1).max(20).default(1),
+      renderAs: z.enum(['flat', 'circle']).default('flat'),
+    })
+    .optional(),
 });
 export type Chart = z.infer<typeof Chart>;
+
+/** 차트 한 줄에서 실제로 뜨는 칸만 (코 없음 칸 제외) */
+export function realCells(line: readonly number[]): number[] {
+  return line.filter((c) => c !== NO_STITCH);
+}
+
+/** 코 없음 칸이 있는 차트 = 차트 자체가 늘림·줄임을 담고 있음 (예: 정수리 소용돌이) */
+export function chartHasNoStitch(grid: readonly (readonly number[])[]): boolean {
+  return grid.some((line) => line.includes(NO_STITCH));
+}
 
 export const Shaping = z.object({
   kind: z.enum(['inc', 'dec']),
@@ -114,7 +153,7 @@ export const Pattern = z.object({
   designer: z.string().default(''),
   gauge: Gauge,
   /** 색 팔레트 (#RRGGBB). 차트 grid의 번호가 이 순서를 가리킴 */
-  palette: z.array(z.object({ name: z.string(), hex: z.string().regex(/^#[0-9a-fA-F]{6}$/) })).default([]),
+  palette: z.array(Yarn).default([]),
   sizes: z
     .array(z.object({ label: z.string().min(1), finished: z.record(z.string(), z.number().positive()).default({}) }))
     .min(1),

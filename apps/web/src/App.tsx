@@ -9,6 +9,7 @@ const Patterns = lazy(() => import('./pages/Patterns'));
 const PatternEdit = lazy(() => import('./pages/PatternEdit'));
 const Hands = lazy(() => import('./pages/Hands'));
 const Settings = lazy(() => import('./pages/Settings'));
+const Studio = lazy(() => import('./pages/Studio'));
 
 export function App() {
   const loc = useLocation();
@@ -19,6 +20,7 @@ export function App() {
         <nav className="topnav" aria-label="메뉴">
           <Link to="/">🚪 옷장</Link>
           <Link to="/patterns">📜 도안</Link>
+          <Link to="/studio">🎨 스튜디오</Link>
           <Link to="/profile/hands">✋ 내 손</Link>
           <Link to="/settings">⚙ 설정</Link>
         </nav>
@@ -33,6 +35,8 @@ export function App() {
           <Route path="/patterns/new" element={<PatternEdit />} />
           <Route path="/patterns/:id/edit" element={<PatternEdit />} />
           <Route path="/patterns/:id/review" element={<PatternEdit />} />
+          <Route path="/studio" element={<Studio />} />
+          <Route path="/studio/:patternId" element={<Studio />} />
           <Route path="/profile/hands" element={<Hands />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<div className="page">없는 페이지예요. <Link to="/">옷장으로</Link></div>} />

@@ -116,3 +116,43 @@ describe('checkin (F4-8)', () => {
     expect(checkin(37.5, 38).warn).toBe(false);
   });
 });
+
+import { SAMPLE_BEANIE, makeSwirlChart, realCells } from '@knitcloset/pattern-schema';
+
+describe('코 없음 칸이 있는 차트 (소용돌이 정수리)', () => {
+  const beanie = parsePattern(SAMPLE_BEANIE);
+  const chart = makeSwirlChart();
+
+  it('도안 게이지 그대로면 112코 = 16코 × 7회, 맨 위 7코', () => {
+    const conv = convertPattern(beanie, { size: '성인', myGauge: { st: 22, row: 30 }, mode: 'needle' });
+    const hat = conv.pieces[0]!;
+    const crown = hat.sections[2]!;
+    expect(crown.chart!.shaped).toBe(true);
+    expect(crown.chart!.repeats).toBe(7);
+    const crownRows = hat.rows.filter((r) => r.sectionIndex === 2);
+    expect(crownRows[0]!.stitchCount).toBe(112);
+    expect(crownRows.at(-1)!.stitchCount).toBe(7);
+    // 단마다 콧수 = 차트 실제 칸 × 7
+    crownRows.forEach((r, i) => expect(r.stitchCount).toBe(realCells(chart[i]!).length * 7));
+    expect(hat.warnings).toEqual([]);
+  });
+
+  it('줄임 이벤트가 차트에서 자동으로 생김', () => {
+    const conv = convertPattern(beanie, { size: '성인', myGauge: { st: 22, row: 30 }, mode: 'needle' });
+    const crownRows = conv.pieces[0]!.rows.filter((r) => r.sectionIndex === 2);
+    const decs = crownRows.filter((r) => r.events.some((e) => e.kind === 'dec'));
+    expect(decs.length).toBeGreaterThan(10);
+    const first = decs[0]!.events.find((e) => e.kind === 'dec')!;
+    expect(first.text).toMatch(/차트대로 7코 줄임 \(반복마다 1코\)/);
+    const totalDec = crownRows.flatMap((r) => r.events).filter((e) => e.kind === 'dec').reduce((s, e) => s + (e.stitches ?? 0), 0);
+    expect(totalDec).toBe(112 - 7);
+  });
+
+  it('쫀손 게이지면 반복 횟수가 늘어 128코 = 16 × 8회', () => {
+    const conv = convertPattern(beanie, { size: '성인', myGauge: { st: 25, row: 33 } });
+    const hat = conv.pieces[0]!;
+    expect(hat.castOn.value).toBe(128);
+    expect(hat.sections[2]!.chart!.repeats).toBe(8);
+    expect(hat.rows.at(-1)!.stitchCount).toBe(8);
+  });
+});

@@ -185,6 +185,9 @@
   font-size: calc(var(--cell) * 0.55);
   line-height: 1;
 }
+.chart-row .cell.none {
+  background: repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in srgb, var(--panel-border) 35%, transparent) 3px 4px);
+}
 .chart-row .cell.rep {
   border-right: 2px solid var(--ink);
 }

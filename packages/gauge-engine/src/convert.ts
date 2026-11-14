@@ -1,5 +1,5 @@
 import type { Pattern, PointEvent, Section } from '@knitcloset/pattern-schema';
-import { resolveSize } from '@knitcloset/pattern-schema';
+import { chartHasNoStitch, realCells, resolveSize } from '@knitcloset/pattern-schema';
 import { gaugeRatio, type Gauge } from './gauge.js';
 import { convertShaping } from './shaping.js';
 import { convertStitchCount } from './stitches.js';
@@ -36,7 +36,15 @@ export type ConvertedSection = {
   endRow: number;
   originalRows: number;
   rows: number;
-  chart?: { grid: number[][]; repeatW: number; repeatH: number };
+  chart?: {
+    grid: number[][];
+    repeatW: number;
+    repeatH: number;
+    /** 코 없음 칸이 있어서 차트가 늘림·줄임을 정함 (정수리 소용돌이 등) */
+    shaped?: boolean;
+    /** shaped일 때 둘레를 도는 반복 횟수 */
+    repeats?: number;
+  };
   /** "6단마다 늘림 9회, 5단마다 늘림 5회 (번갈아) · 마커 양옆" */
   shapingNotes: string[];
 };
@@ -137,7 +145,11 @@ export function convertPattern(pattern: Pattern, options: ConvertOptions): Conve
     const warnings: string[] = [];
     const originalCastOn = resolveSize(piece.castOn, options.size);
     const firstChart = piece.sections.find((s) => s.chart)?.chart;
-    const chartRepeat = firstChart ? firstChart.repeatW ?? firstChart.grid[0]!.length : undefined;
+    const chartRepeat = firstChart
+      ? chartHasNoStitch(firstChart.grid)
+        ? realCells(firstChart.grid[0]!).length
+        : firstChart.repeatW ?? firstChart.grid[0]!.length
+      : undefined;
     const repeat =
       piece.stitchMultiple !== undefined && chartRepeat !== undefined
         ? lcm(piece.stitchMultiple, chartRepeat)
@@ -164,13 +176,28 @@ export function convertPattern(pattern: Pattern, options: ConvertOptions): Conve
 
     piece.sections.forEach((section, sectionIndex) => {
       const originalRows = resolveSize(section.rows, options.size);
-      const chart = section.chart
+      const shaped = section.chart ? chartHasNoStitch(section.chart.grid) : false;
+      const chart: ConvertedSection['chart'] = section.chart
         ? {
             grid: section.chart.grid,
             repeatW: section.chart.repeatW ?? section.chart.grid[0]!.length,
             repeatH: section.chart.grid.length,
+            ...(shaped ? { shaped: true } : {}),
           }
         : undefined;
+      // 코 없음 칸이 있는 차트: 단마다 실제 칸 수 × 반복 횟수가 그 단의 콧수
+      const realPerRow = shaped && chart ? chart.grid.map((l) => realCells(l).length) : undefined;
+      let repeats = 0;
+      if (realPerRow && chart) {
+        const first = realPerRow[0]!;
+        repeats = first > 0 ? Math.max(1, Math.round(count / first)) : 1;
+        chart.repeats = repeats;
+        if (first * repeats !== count) {
+          warnings.push(
+            `${section.name}: 시작 콧수 ${count}코가 차트 첫 단 ${first}코 × ${repeats}회와 맞지 않아요. ${first * repeats}코로 계산했어요.`,
+          );
+        }
+      }
       // 배색 차트 구간은 무늬 모양을 지키려고 단 수를 바꾸지 않음
       let sectionRows = chart ? originalRows : Math.max(1, Math.round(originalRows * kRow));
 
@@ -233,7 +260,7 @@ export function convertPattern(pattern: Pattern, options: ConvertOptions): Conve
         });
       }
 
-      if (chart && count % chart.repeatW !== 0) {
+      if (chart && !shaped && count % chart.repeatW !== 0) {
         warnings.push(
           `${section.name}: 시작 콧수 ${count}코가 차트 반복 ${chart.repeatW}코의 배수가 아니에요. 앞 구간 늘림·줄임을 확인해 주세요.`,
         );
@@ -242,7 +269,23 @@ export function convertPattern(pattern: Pattern, options: ConvertOptions): Conve
       const startRow = rowNo + 1;
       for (let sr = 1; sr <= sectionRows; sr++) {
         rowNo++;
-        const events = eventsAt.get(sr) ?? [];
+        const events = [...(eventsAt.get(sr) ?? [])];
+        if (realPerRow && chart) {
+          // 차트 모양대로 생기는 늘림·줄임을 이벤트로 풀어 줌
+          const prev = sr === 1 ? count : realPerRow[(sr - 2) % chart.repeatH]! * repeats;
+          const target = realPerRow[(sr - 1) % chart.repeatH]! * repeats;
+          if (sr === 1) count = target;
+          const diff = target - prev;
+          if (diff !== 0 && sr > 1) {
+            const per = Math.abs(diff) / repeats;
+            events.unshift({
+              kind: diff < 0 ? 'dec' : 'inc',
+              stitches: Math.abs(diff),
+              text: `차트대로 ${Math.abs(diff)}코 ${diff < 0 ? '줄임' : '늘림'} (반복마다 ${Number.isInteger(per) ? per : per.toFixed(1)}코)`,
+              lock: false,
+            });
+          }
+        }
         const worked = count;
         for (const e of events) {
           const n = e.stitches ?? 0;

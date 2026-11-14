@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { checkin, convertPattern, type ConvertedPattern, type ProgressEvent } from '@knitcloset/gauge-engine';
-import { parsePattern, SAMPLE_PATTERN } from '@knitcloset/pattern-schema';
+import { parsePattern, SAMPLE_BEANIE, SAMPLE_PATTERN } from '@knitcloset/pattern-schema';
 import { Db, json, now, uid } from './db.js';
 import { learnFromFinished, suggestGauge, type CoefficientRow, type SwatchRow } from './hands.js';
 import {
@@ -17,6 +17,7 @@ import {
   type ProjectRow,
 } from './projects.js';
 import { aiRoutes } from './ai.js';
+import { yarnRoutes } from './yarns.js';
 
 export type Env = {
   DB: D1Database;
@@ -292,7 +293,8 @@ api.post('/patterns', async (c) => {
 });
 
 api.post('/patterns/sample', async (c) => {
-  const id = await savePattern(c.var.db, null, SAMPLE_PATTERN, { sourceType: 'manual' });
+  const which = c.req.query('which') === 'beanie' ? SAMPLE_BEANIE : SAMPLE_PATTERN;
+  const id = await savePattern(c.var.db, null, which, { sourceType: 'manual' });
   return c.json({ id }, 201);
 });
 
@@ -636,13 +638,14 @@ api.delete('/notes/:id', async (c) => {
 
 api.get('/export', async (c) => {
   const db = c.var.db;
-  const tables = ['profiles', 'swatches', 'hand_coefficients', 'patterns', 'projects', 'pieces', 'progress', 'progress_events', 'checkins', 'notes', 'yarn_logs', 'finished_records'];
+  const tables = ['profiles', 'yarns', 'swatches', 'hand_coefficients', 'patterns', 'projects', 'pieces', 'progress', 'progress_events', 'checkins', 'notes', 'yarn_logs', 'finished_records'];
   const out: Record<string, unknown[]> = {};
   for (const t of tables) out[t] = await db.all(`SELECT * FROM ${t}`);
   return c.json({ exportedAt: now(), version: 1, tables: out });
 });
 
 api.route('/', aiRoutes);
+api.route('/', yarnRoutes);
 
 app.route('/api', api);
 app.all('/api/*', (c) => c.json({ error: '없는 API예요' }, 404));

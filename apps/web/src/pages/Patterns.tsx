@@ -31,6 +31,13 @@ export default function Patterns() {
     mutationFn: api.addSamplePattern,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['patterns'] }),
   });
+  const beanie = useMutation({
+    mutationFn: () => api.addSamplePattern('beanie'),
+    onSuccess: async ({ id }) => {
+      await qc.invalidateQueries({ queryKey: ['patterns'] });
+      nav(`/studio/${id}`);
+    },
+  });
   const del = useMutation({
     mutationFn: (id: string) => api.deletePattern(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['patterns'] }),
@@ -96,6 +103,12 @@ export default function Patterns() {
           <button className="btn primary" disabled={!!busy} onClick={() => fileRef.current?.click()}>PDF 고르기</button>
         </div>
         <div className="card">
+          <h3>🎨 디자인 스튜디오</h3>
+          <p className="small muted">배색 차트를 그리고 실을 골라 평면·원형(정수리)으로 미리 봐요. 저장하면 바로 뜰 수 있는 도안이 돼요.</p>
+          <Link className="btn primary" to="/studio">새 디자인</Link>
+          <button className="btn ghost" onClick={() => beanie.mutate()} disabled={beanie.isPending}>소용돌이 비니 샘플</button>
+        </div>
+        <div className="card">
           <h3>✏ 직접 입력</h3>
           <p className="small muted">게이지, 사이즈표, 조각, 구간별 지시와 배색 차트를 입력해요.</p>
           <Link className="btn" to="/patterns/new">새 도안 입력</Link>
@@ -125,11 +138,12 @@ export default function Patterns() {
             <div style={{ flex: 1, minWidth: 200 }}>
               <b>{p.title}</b>
               <div className="small muted num">
-                {p.designer || '작가 미상'} · {p.sourceType === 'pdf' ? 'PDF' : p.sourceType === 'ai' ? 'AI 생성' : '직접 입력'} · {p.gauge.st}코 {p.gauge.row}단
+                {p.designer || '작가 미상'} · {p.sourceType === 'pdf' ? 'PDF' : p.sourceType === 'ai' ? 'AI 생성' : p.sourceType === 'design' ? '내 디자인' : '직접 입력'} · {p.gauge.st}코 {p.gauge.row}단
                 {p.needleMm ? ` · ${p.needleMm}mm` : ''} · {fmtDate(p.updatedAt)}
               </div>
             </div>
             <Link className="btn small" to={`/patterns/${p.id}/edit`}>수정</Link>
+            <Link className="btn small" to={`/studio/${p.id}`}>🎨 차트</Link>
             <Link className="btn small primary" to={`/project/new?pattern=${p.id}`}>이 도안으로 뜨기</Link>
             <button className="btn small danger" onClick={() => window.confirm(`"${p.title}" 도안을 지울까요?`) && del.mutate(p.id)}>삭제</button>
           </li>

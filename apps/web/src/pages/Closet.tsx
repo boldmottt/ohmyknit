@@ -52,6 +52,7 @@ export function Closet() {
         )}
         <nav className="closet-nav">
           <Link to="/patterns">📜 도안</Link>
+          <Link to="/studio">🎨 스튜디오</Link>
           <Link to="/profile/hands">✋ 내 손</Link>
           <Link to="/settings">⚙</Link>
         </nav>

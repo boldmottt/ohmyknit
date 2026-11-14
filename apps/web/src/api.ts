@@ -193,6 +193,23 @@ export type AiDraft = {
   fileKey?: string;
 };
 
+export type LibraryYarn = {
+  id: string;
+  source: 'library' | 'mine';
+  brand: string;
+  name: string;
+  weight: string;
+  fiber: string;
+  hex: string;
+  hex2: string | null;
+  heather: number;
+  photoKey: string | null;
+  gramsOwned: number | null;
+  family: string;
+};
+
+export type YarnPage = { items: LibraryYarn[]; total: number; page: number; pages: number; brands: string[]; families: string[] };
+
 export const api = {
   profiles: () => req<Profile[]>('GET', '/profiles'),
   createProfile: (b: { name: string; avatar?: string; color?: string }) => req<{ id: string }>('POST', '/profiles', b),
@@ -253,7 +270,15 @@ export const api = {
   pattern: (id: string) => req<PatternListItem & { pattern: Pattern }>('GET', `/patterns/${id}`),
   createPattern: (pattern: unknown, meta: { profileId?: string; sourceType?: string; fileKey?: string } = {}) =>
     req<{ id: string }>('POST', '/patterns', { pattern, ...meta }),
-  addSamplePattern: () => req<{ id: string }>('POST', '/patterns/sample'),
+  addSamplePattern: (which: 'sweater' | 'beanie' = 'sweater') =>
+    req<{ id: string }>('POST', `/patterns/sample${which === 'beanie' ? '?which=beanie' : ''}`),
+  yarns: (q: { profileId?: string; q?: string; brand?: string; family?: string; sort?: 'color' | 'brand'; source?: string; page?: number; per?: number }) =>
+    req<YarnPage>(
+      'GET',
+      `/yarns?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`,
+    ),
+  addYarn: (profileId: string, b: Partial<LibraryYarn> & { note?: string }) => req<{ id: string }>('POST', `/profiles/${profileId}/yarns`, b),
+  deleteYarn: (id: string) => req('DELETE', `/yarns/${id}`),
   updatePattern: (id: string, pattern: unknown, fileKey?: string) => req('PUT', `/patterns/${id}`, { pattern, fileKey }),
   deletePattern: (id: string) => req('DELETE', `/patterns/${id}`),
   preview: (id: string, b: { size: string; myGauge: { st: number; row: number }; mode: 'recalc' | 'needle' }) =>

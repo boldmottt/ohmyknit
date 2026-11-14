@@ -164,7 +164,7 @@ function StepPattern(p: {
             <button className="pick" aria-pressed={p.selected === x.id} onClick={() => p.onSelect(x.id)}>
               <b>{x.title}</b>{' '}
               <span className="muted small">
-                {x.designer} · {x.sourceType === 'pdf' ? 'PDF' : x.sourceType === 'ai' ? 'AI 생성' : '직접 입력'} · {x.gauge.st}코 {x.gauge.row}단
+                {x.designer} · {x.sourceType === 'pdf' ? 'PDF' : x.sourceType === 'ai' ? 'AI 생성' : x.sourceType === 'design' ? '내 디자인' : '직접 입력'} · {x.gauge.st}코 {x.gauge.row}단
               </span>
             </button>
           </li>

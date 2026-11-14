@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { convertPattern } from '@knitcloset/gauge-engine';
 import { parsePattern, TECHNIQUE_LABEL, type Technique } from '@knitcloset/pattern-schema';
@@ -247,7 +247,7 @@ export default function PatternEdit() {
               </section>
 
               {pat.pieces.map((pc, pi) => (
-                <PieceEditor key={pi} piece={pc} sizes={sizeLabels} palette={pat.palette} onChange={(np) => upd((p) => void (p.pieces[pi] = np))} onRemove={pat.pieces.length > 1 ? () => upd((p) => void p.pieces.splice(pi, 1)) : undefined} />
+                <PieceEditor key={pi} {...(id ? { studioBase: `/studio/${id}?piece=${pi}` } : {})} piece={pc} sizes={sizeLabels} palette={pat.palette} onChange={(np) => upd((p) => void (p.pieces[pi] = np))} onRemove={pat.pieces.length > 1 ? () => upd((p) => void p.pieces.splice(pi, 1)) : undefined} />
               ))}
               <button className="btn" style={{ marginTop: 14 }} onClick={() => upd((p) => void p.pieces.push({ id: `piece${p.pieces.length + 1}`, name: '새 조각', construction: 'flat', direction: 'bottom_up', count: 1, castOn: 60, sections: [{ name: '몸통', technique: 'stockinette', rows: 40, instruction: '겉뜨기', shaping: [], events: [] }] }))}>
                 + 조각 추가
@@ -330,7 +330,7 @@ function SizeInput({ label, value, sizes, onChange }: { label: string; value: SV
   );
 }
 
-function PieceEditor({ piece, sizes, palette, onChange, onRemove }: { piece: EPiece; sizes: string[]; palette: { name: string; hex: string }[]; onChange: (p: EPiece) => void; onRemove?: () => void }) {
+function PieceEditor({ piece, sizes, palette, onChange, onRemove, studioBase }: { piece: EPiece; sizes: string[]; palette: { name: string; hex: string }[]; onChange: (p: EPiece) => void; onRemove?: () => void; studioBase?: string }) {
   const set = (f: (p: EPiece) => void) => {
     const n = structuredClone(piece);
     f(n);
@@ -371,6 +371,7 @@ function PieceEditor({ piece, sizes, palette, onChange, onRemove }: { piece: EPi
           sizes={sizes}
           palette={palette}
           onChange={(ns) => set((p) => void (p.sections[si] = ns))}
+          {...(studioBase ? { studioHref: `${studioBase}&section=${si}` } : {})}
           onRemove={piece.sections.length > 1 ? () => set((p) => void p.sections.splice(si, 1)) : undefined}
           onMove={(d) => set((p) => {
             const j = si + d;
@@ -384,7 +385,7 @@ function PieceEditor({ piece, sizes, palette, onChange, onRemove }: { piece: EPi
   );
 }
 
-function SectionEditor({ index, section: s, sizes, palette, onChange, onRemove, onMove }: { index: number; section: ESection; sizes: string[]; palette: { name: string; hex: string }[]; onChange: (s: ESection) => void; onRemove?: () => void; onMove: (d: number) => void }) {
+function SectionEditor({ index, section: s, sizes, palette, onChange, onRemove, onMove, studioHref }: { index: number; section: ESection; sizes: string[]; palette: { name: string; hex: string }[]; onChange: (s: ESection) => void; onRemove?: () => void; onMove: (d: number) => void; studioHref?: string }) {
   const set = (f: (x: ESection) => void) => {
     const n = structuredClone(s);
     f(n);
@@ -412,6 +413,11 @@ function SectionEditor({ index, section: s, sizes, palette, onChange, onRemove, 
 
       <details open={!!s.chart} style={{ marginTop: 8 }}>
         <summary>🎨 배색 차트 {s.chart ? `(${s.chart.grid[0]?.length}×${s.chart.grid.length})` : ''}</summary>
+        {s.chart && (
+          <p className="small" style={{ margin: '6px 0' }}>
+            {studioHref ? <Link className="btn small" to={studioHref}>🎨 디자인 스튜디오에서 열기</Link> : <span className="muted">저장한 뒤 디자인 스튜디오(원형 미리보기·실 라이브러리)에서 열 수 있어요</span>}
+          </p>
+        )}
         {s.chart ? (
           <ChartEditor chart={s.chart} palette={palette} onChange={(c) => set((x) => void (x.chart = c))} onRemove={() => set((x) => void delete x.chart)} />
         ) : (
@@ -518,7 +524,7 @@ function ChartEditor({ chart, palette, onChange, onRemove }: { chart: { grid: nu
               <span
                 key={ci}
                 className="ec"
-                style={{ background: palette[c]?.hex ?? '#ccc', borderRight: chart.repeatW && (ci + 1) % chart.repeatW === 0 ? '2px solid #000' : undefined }}
+                style={{ background: c === -1 ? 'repeating-linear-gradient(45deg,#0000 0 3px,#0002 3px 4px)' : palette[c]?.hex ?? '#ccc', borderRight: chart.repeatW && (ci + 1) % chart.repeatW === 0 ? '2px solid #000' : undefined }}
                 onPointerDown={(e) => {
                   e.preventDefault();
                   (e.target as HTMLElement).releasePointerCapture?.(e.pointerId);

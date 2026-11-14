@@ -10,11 +10,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@knitcloset/gauge-engine": "workspace:*"
+    "@knitcloset/gauge-engine": "workspace:*",
+    "@knitcloset/pattern-schema": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.6.3",
-    "vitest": "^2.1.9",
-    "@knitcloset/pattern-schema": "workspace:*"
+    "vitest": "^2.1.9"
   }
 }

@@ -101,3 +101,57 @@ export const SAMPLE_PATTERN: PatternInput = {
     },
   ],
 };
+
+/**
+ * 소용돌이 정수리 차트 만들기 (아래에서 위로 뜨는 비니 정수리).
+ * 1단은 width코가 모두 있고, 위로 갈수록 왼쪽부터 "코 없음"(-1)이 늘어나 1코까지 줄어요.
+ * 줄임이 늘 같은 쪽에서 일어나서 원형으로 보면 소용돌이가 생겨요.
+ */
+export function makeSwirlChart(width = 16, rows = 18, stripe = 4): number[][] {
+  const grid: number[][] = [];
+  for (let r = 0; r < rows; r++) {
+    const real = Math.max(1, Math.round(width - ((width - 1) * r) / (rows - 1)));
+    const line: number[] = [];
+    for (let c = 0; c < width; c++) {
+      if (c < width - real) line.push(-1);
+      // 0 = 바탕색(호박), 1 = 줄무늬(크림)
+      else line.push((width - 1 - c) % stripe === stripe - 1 ? 1 : 0);
+    }
+    grid.push(line);
+  }
+  return grid;
+}
+
+export const SAMPLE_BEANIE: PatternInput = {
+  title: '호박 소용돌이 비니',
+  designer: 'KnitCloset 샘플',
+  yarn: 'DK 울 · 크림 1볼, 호박색 1볼',
+  gauge: { st: 22, row: 30, needleMm: 4, technique: 'colorwork' },
+  palette: [
+    { name: '호박', hex: '#C8641E', hex2: '#E08A3C', heather: 0.35 },
+    { name: '크림', hex: '#F3EBDD' },
+  ],
+  sizes: [{ label: '성인', finished: { 머리둘레: 51 } }],
+  pieces: [
+    {
+      id: 'hat',
+      name: '비니',
+      construction: 'round',
+      direction: 'bottom_up',
+      castOn: 112,
+      stitchMultiple: 16,
+      sections: [
+        { name: '고무단', technique: 'ribbing', rows: 24, instruction: '2코 고무뜨기' },
+        { name: '몸통', technique: 'stockinette', rows: 40, instruction: '겉뜨기 (호박색)' },
+        {
+          name: '소용돌이 정수리',
+          technique: 'colorwork',
+          rows: 18,
+          instruction: '차트대로 배색뜨기 (줄임은 차트 모양대로)',
+          chart: { grid: makeSwirlChart(), preview: { repeatsX: 7, repeatsY: 1, renderAs: 'circle' } },
+          events: [{ kind: 'bindoff', atRow: 'end', text: '남은 코에 실을 꿰어 조이기' }],
+        },
+      ],
+    },
+  ],
+};

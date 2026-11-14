@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ConvertedPiece } from '@knitcloset/gauge-engine';
 import { COLOR_SYMBOLS, shade, type Palette } from '@knitcloset/knit-render';
-import { TECHNIQUE_LABEL } from '@knitcloset/pattern-schema';
+import { NO_STITCH, realCells, TECHNIQUE_LABEL } from '@knitcloset/pattern-schema';
 import { fileUrl, type Note, type WorkData } from '../api';
 import { colorRun, workingGauge, type RowView } from '../derive';
 
@@ -100,8 +100,9 @@ function ChartTab({ piece, view, palette, symbols, hoverRow, onHoverRow, onPickR
               {grid[r]!.map((c, i) => (
                 <span
                   key={i}
-                  className={`cell${(i + 1) % repeatW === 0 && i + 1 < width ? ' rep' : ''}`}
-                  style={{ background: palette[c]?.hex ?? '#ccc', color: shade(palette[c]?.hex ?? '#ccc', -0.6) }}
+                  className={`cell${(i + 1) % repeatW === 0 && i + 1 < width ? ' rep' : ''}${c === NO_STITCH ? ' none' : ''}`}
+                  style={c === NO_STITCH ? undefined : { background: palette[c]?.hex ?? '#ccc', color: shade(palette[c]?.hex ?? '#ccc', -0.6) }}
+                  title={c === NO_STITCH ? '코 없음' : undefined}
                 >
                   {symbols && c > 0 ? COLOR_SYMBOLS[c % COLOR_SYMBOLS.length] : ''}
                 </span>
@@ -276,7 +277,7 @@ function CurrentRowCard({ data, piece, view, palette }: Props) {
       {sec.instruction && <div>{sec.instruction}</div>}
       {chartLine && (
         <div>
-          배색: {colorRun(chartLine, palette)} 반복 × {Math.floor(r.stitchesWorked / chartLine.length)}
+          배색: {colorRun(chartLine, palette)} 반복 × {sec.chart?.shaped ? sec.chart.repeats : Math.floor(r.stitchesWorked / Math.max(1, realCells(chartLine).length))}
         </div>
       )}
       <hr />

@@ -98,11 +98,13 @@ export function linkedCounters(piece: ConvertedPiece, completedRows: number, cus
   const sec = piece.sections[row.sectionIndex]!;
   out.push({ label: sec.name, value: `${row.sectionRow} / ${sec.rows}단` });
   if (sec.chart && row.chartRow !== undefined) {
-    const repeats = Math.floor(row.stitchesWorked / sec.chart.repeatW);
+    const line = sec.chart.grid[row.chartRow] ?? [];
+    const real = line.filter((c) => c !== -1).length;
+    const repeats = sec.chart.shaped ? (sec.chart.repeats ?? 1) : Math.floor(row.stitchesWorked / sec.chart.repeatW);
     out.push({
       label: '차트',
       value: `${row.chartRow + 1} / ${sec.chart.repeatH}단`,
-      detail: `${sec.chart.repeatW}코 무늬 반복 ×${repeats}`,
+      detail: sec.chart.shaped ? `이 단 ${real}코 × ${repeats}회 = ${real * repeats}코` : `${sec.chart.repeatW}코 무늬 반복 ×${repeats}`,
     });
   }
   // 다음 늘림·줄임까지
@@ -134,7 +136,8 @@ export function linkedCounters(piece: ConvertedPiece, completedRows: number, cus
 }
 
 /** 지시 카드 배색 설명: 현재 차트 줄의 색 구성 */
-export function colorRun(grid: number[], palette: { name: string; hex: string }[]): string {
+export function colorRun(line: number[], palette: { name: string; hex: string }[]): string {
+  const grid = line.filter((c) => c !== -1);
   if (grid.length === 0) return '';
   const runs: { c: number; n: number }[] = [];
   for (const c of grid) {

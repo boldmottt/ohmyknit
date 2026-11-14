@@ -23,3 +23,26 @@ describe('pattern schema', () => {
     expect(() => resolveSize({ M: 200 }, 'S')).toThrow('S');
   });
 });
+
+import { chartHasNoStitch, makeSwirlChart, NO_STITCH, realCells, SAMPLE_BEANIE } from '../src/index.js';
+
+describe('코 없음 칸', () => {
+  it('소용돌이 차트: 1단 16코 → 맨 위 1코, 코 없음은 왼쪽', () => {
+    const g = makeSwirlChart(16, 18);
+    expect(realCells(g[0]!)).toHaveLength(16);
+    expect(realCells(g[17]!)).toHaveLength(1);
+    expect(g[17]![0]).toBe(NO_STITCH);
+    expect(g[17]![15]).not.toBe(NO_STITCH);
+    expect(chartHasNoStitch(g)).toBe(true);
+  });
+
+  it('비니 샘플이 스키마를 통과', () => {
+    const p = parsePattern(SAMPLE_BEANIE);
+    expect(p.palette[0]!.heather).toBe(0.35);
+    expect(p.pieces[0]!.sections[2]!.chart!.preview!.renderAs).toBe('circle');
+  });
+
+  it('-2 같은 값은 거부', () => {
+    expect(() => parsePattern({ ...SAMPLE_BEANIE, pieces: [{ ...SAMPLE_BEANIE.pieces[0]!, sections: [{ name: 'x', rows: 1, chart: { grid: [[-2]] } }] }] })).toThrow();
+  });
+});

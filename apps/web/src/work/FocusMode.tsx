@@ -113,7 +113,7 @@ export function FocusMode({ piece, view, palette, progress, activeMs, onInc, onD
           </div>
           {chartLine && (
             <div className="focus-chart">
-              {chartLine.map((c, i) => (
+              {chartLine.filter((c) => c !== -1).map((c, i) => (
                 <span key={i} style={{ background: palette[c]?.hex }} />
               ))}
             </div>

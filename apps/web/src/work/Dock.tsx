@@ -44,7 +44,10 @@ export function Dock({ piece, view, projectId, onInc, onDec, onTool, stitchTrack
   const [adding, setAdding] = useState(false);
   const counters = linkedCounters(piece, view.completedRows, custom);
   const next = upcoming(piece, view.completedRows, 20);
-  const repeatW = view.section?.chart?.repeatW;
+  const ch = view.section?.chart;
+  const repeatW = ch?.shaped && view.row?.chartRow !== undefined
+    ? Math.max(1, (ch.grid[view.row.chartRow] ?? []).filter((c) => c !== -1).length)
+    : ch?.repeatW;
   return (
     <section className="dock panel" aria-label="진행">
       <div className="counter">
