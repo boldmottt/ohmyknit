@@ -1,0 +1,3 @@
+# apps/worker/.dev.vars 로 복사해서 쓰세요. 이 파일은 git에 올라가지 않아요.
+# AI 도안 파싱·생성 (선택)
+ANTHROPIC_API_KEY=

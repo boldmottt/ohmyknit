@@ -1,0 +1,517 @@
+/*
+ * 표현 계층: 앱 전체가 함께 쓰는 차분한 편집 디자인 결.
+ * 넓은 여백, 가는 글자와 넓은 자간, 그림자 대신 가는 선.
+ * 구조(styles.css) 위에 얹는 계층이라 이 파일만 빼도 앱은 그대로 동작해요.
+ */
+:root {
+  --font: 'Avenir Next', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR', system-ui, sans-serif;
+  --serif: var(--font);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --radius: 4px;
+  --bg: #f4eff0;
+  --paper: #faf7f7;
+  --ink: #3a3137;
+  --ink-soft: #8d8189;
+  --line: color-mix(in srgb, var(--ink) 18%, transparent);
+  --panel-border: var(--line);
+  --accent: #5a3d4c;
+  --accent-ink: #fbf7f8;
+  --warn: #b0843a;
+  --warn-bg: #f5ead6;
+  --ok: #4f7a5a;
+  --danger: #a3393f;
+  --ghost: rgba(244, 239, 240, 0.82);
+  --shadow: 0 24px 60px rgba(60, 40, 55, 0.14);
+  --glass-border: var(--line);
+  color-scheme: light;
+}
+:root[data-skin='modern'] {
+  --bg: #f1f2f4;
+  --paper: #f8f9fa;
+  --ink: #23272e;
+  --ink-soft: #7b838f;
+  --accent: #2f3a4d;
+}
+:root[data-theme='dark'] {
+  --bg: #1c181b;
+  --paper: #231e22;
+  --ink: #efe6ea;
+  --ink-soft: #a2959d;
+  --accent: #e6cfae;
+  --accent-ink: #1c181b;
+  --warn: #c9a15a;
+  --warn-bg: #362c1c;
+  --ghost: rgba(28, 24, 27, 0.82);
+  --shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #1c181b;
+    --paper: #231e22;
+    --ink: #efe6ea;
+    --ink-soft: #a2959d;
+    --accent: #e6cfae;
+    --accent-ink: #1c181b;
+    --warn: #c9a15a;
+    --warn-bg: #362c1c;
+    --ghost: rgba(28, 24, 27, 0.82);
+    --shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+    color-scheme: dark;
+  }
+}
+
+body {
+  font-family: var(--font);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  background: var(--bg);
+  color: var(--ink);
+}
+/* 필름 그레인: 평평한 색면에 종이 같은 결 */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 200;
+  opacity: 0.045;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+h1,
+h2,
+h3,
+.serif {
+  font-family: var(--font);
+  font-weight: 300;
+  letter-spacing: 0.1em;
+  text-wrap: balance;
+}
+h3 {
+  font-size: 0.8rem;
+  letter-spacing: 0.18em;
+  color: var(--ink-soft);
+  font-weight: 400;
+}
+b,
+strong {
+  font-weight: 500;
+}
+.num {
+  font-variant-numeric: tabular-nums;
+}
+.muted {
+  color: var(--ink-soft);
+}
+:focus-visible {
+  outline: 1px solid var(--ink);
+  outline-offset: 3px;
+}
+
+/* ── 머리말 (모든 화면 공용) ── */
+.site-head {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  padding: calc(14px + env(safe-area-inset-top)) clamp(18px, 4vw, 52px) 10px;
+  font-size: 0.8rem;
+  font-weight: 300;
+  letter-spacing: 0.16em;
+  position: relative;
+  z-index: 30;
+}
+.site-head a,
+.site-head button {
+  color: var(--ink-soft);
+  text-decoration: none;
+  transition: color 0.25s;
+  white-space: nowrap;
+}
+.site-head .wordmark {
+  color: var(--ink);
+  font-size: 1.15rem;
+  letter-spacing: 0.5em;
+}
+.site-nav {
+  display: flex;
+  gap: clamp(14px, 2.6vw, 34px);
+}
+.site-nav a,
+.site-side a {
+  padding: 12px 0;
+  position: relative;
+}
+.site-nav a::after,
+.site-side a::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 8px;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.45s var(--ease-out);
+}
+.site-head a:hover,
+.site-head a[aria-current],
+.site-head button:hover {
+  color: var(--ink);
+}
+.site-nav a:hover::after,
+.site-nav a[aria-current]::after,
+.site-side a[aria-current]::after {
+  transform: scaleX(1);
+}
+.site-side {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: clamp(12px, 2vw, 28px);
+}
+@media (max-width: 900px) {
+  .site-head {
+    grid-template-columns: 1fr auto;
+    row-gap: 0;
+  }
+  .site-nav {
+    grid-row: 2;
+    grid-column: 1 / -1;
+    justify-content: space-between;
+  }
+  .site-head .wordmark {
+    font-size: 1rem;
+    letter-spacing: 0.36em;
+  }
+}
+
+/* 글자만 있는 조용한 버튼 */
+.linkish {
+  background: none;
+  border: 0;
+  padding: 10px 0;
+  min-height: 44px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 300;
+  letter-spacing: 0.14em;
+  color: var(--ink-soft);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: color 0.25s;
+}
+.linkish:hover,
+.linkish.strong {
+  color: var(--ink);
+}
+.linkish.danger:hover {
+  color: var(--danger);
+}
+.linkish:disabled {
+  opacity: 0.4;
+}
+
+/* ── 버튼 · 입력 ── */
+.btn {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  box-shadow: none;
+  font-size: 0.84rem;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+  transition: border-color 0.25s, background 0.25s, color 0.25s, transform 0.2s var(--ease-out), opacity 0.2s;
+}
+.btn:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+.btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.btn.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+  font-weight: 400;
+}
+.btn.primary:hover:not(:disabled) {
+  opacity: 0.86;
+}
+.btn.danger {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+}
+.btn.ghost {
+  border-color: transparent;
+  color: var(--ink-soft);
+}
+.btn.ghost:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--ink);
+}
+.seg {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+.seg button {
+  letter-spacing: 0.1em;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  transition: background 0.25s, color 0.25s;
+}
+.seg button[aria-pressed='true'] {
+  background: var(--ink);
+  color: var(--bg);
+}
+.input,
+.field input,
+.field select,
+.field textarea {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  transition: border-color 0.25s;
+}
+.input:focus,
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+.field > span {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  color: var(--ink-soft);
+}
+input[type='checkbox'],
+input[type='range'],
+input[type='color'] {
+  accent-color: var(--ink);
+}
+
+/* ── 면 ── */
+.card,
+.sp {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+.card {
+  padding: clamp(16px, 2.4vw, 28px);
+}
+.badge {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: transparent;
+  letter-spacing: 0.08em;
+}
+.badge.warn {
+  background: var(--warn-bg);
+  border-color: color-mix(in srgb, var(--warn) 50%, transparent);
+}
+.error {
+  border-radius: 2px;
+}
+.page {
+  padding-top: 28px;
+  animation: rise 0.7s var(--ease-out) both;
+}
+.page-head {
+  margin: 8px 0 30px;
+}
+.page-head h1 {
+  font-size: clamp(1.5rem, 3vw, 2.1rem);
+  font-weight: 200;
+  letter-spacing: 0.16em;
+}
+.page > .card,
+.page > section,
+.page > form,
+.page > ul > li,
+.studio-side > .sp {
+  animation: rise 0.7s var(--ease-out) both;
+}
+.page > :nth-child(2),
+.studio-side > :nth-child(2) { animation-delay: 0.06s; }
+.page > :nth-child(3),
+.studio-side > :nth-child(3) { animation-delay: 0.12s; }
+.page > :nth-child(4),
+.studio-side > :nth-child(4) { animation-delay: 0.18s; }
+.page > :nth-child(5),
+.studio-side > :nth-child(5) { animation-delay: 0.24s; }
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+.stepper span {
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  padding: 6px 0;
+  margin-right: 18px;
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+}
+.stepper span.on {
+  background: none;
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.pick {
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  transition: border-color 0.25s, transform 0.3s var(--ease-out);
+}
+.pick:hover {
+  border-color: var(--ink);
+}
+.pick[aria-pressed='true'] {
+  border: 1px solid var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+.dims th,
+.dims td {
+  border-bottom: 1px solid var(--line);
+  font-weight: 400;
+}
+.dims th {
+  font-size: 0.72rem;
+  letter-spacing: 0.14em;
+  color: var(--ink-soft);
+}
+
+/* 떠 있는 것들: 모달, 메뉴, 알림 */
+.modal-back {
+  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  animation: fade-in 0.3s ease;
+}
+.modal,
+.menu,
+.more-menu,
+.yarn-lib {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.modal {
+  animation: pop-in 0.45s var(--ease-out);
+}
+.modal h2 {
+  font-size: 1.2rem;
+  letter-spacing: 0.14em;
+  margin-bottom: 18px;
+}
+.toast {
+  background: var(--ink);
+  color: var(--bg);
+  border-radius: 2px;
+  letter-spacing: 0.06em;
+  font-size: 0.86rem;
+  box-shadow: var(--shadow);
+  animation: pop-in 0.45s var(--ease-out);
+}
+
+/* 진행 막대: 가는 선 */
+.meter {
+  height: 2px;
+  border: 0;
+  border-radius: 0;
+  background: var(--line);
+  overflow: visible;
+}
+.meter i {
+  background: var(--ink);
+  transition: width 0.9s var(--ease-out);
+}
+
+/* ── 스튜디오 ── */
+.studio {
+  animation: rise 0.7s var(--ease-out) both;
+}
+.studio-brand b {
+  font-weight: 300;
+  letter-spacing: 0.16em;
+}
+.studio-preview,
+.studio-chart {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.studio-preview {
+  background:
+    radial-gradient(ellipse 55% 55% at 50% 42%, color-mix(in srgb, #fff 70%, transparent), transparent 70%),
+    var(--paper);
+}
+.preview-wrap canvas {
+  filter: drop-shadow(0 22px 26px rgba(60, 40, 55, 0.22)) drop-shadow(0 2px 3px rgba(60, 40, 55, 0.2));
+  animation: pop-in 0.8s var(--ease-out);
+}
+.chart-tools {
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
+}
+.cg-cell {
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  transition: transform 0.1s;
+}
+.cg-cell:hover {
+  transform: scale(1.14);
+  z-index: 1;
+}
+.yarn-slots li {
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  transition: border-color 0.25s;
+}
+.yarn-slots li.on {
+  border: 1px solid var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+.yarn-card {
+  border-radius: 2px;
+  transition: border-color 0.25s, transform 0.3s var(--ease-out);
+}
+.yarn-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--ink);
+}
+.yarn-card img,
+.slot-main img {
+  border-radius: 2px;
+}
+.more-menu button:hover,
+.menu button:hover {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+a.btn {
+  text-decoration: none;
+}

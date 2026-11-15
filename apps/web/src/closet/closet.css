@@ -1,0 +1,655 @@
+/*
+ * 옷장 홈. 여백을 넓게, 글자는 가늘게, 옷이 주인공.
+ * 작품들은 한 줄 레일에 걸려 원근감 있게 뒤로 이어져요.
+ * 길이는 모두 --u(화면 크기에 비례하는 단위)로 잡아서 어떤 화면에서도 같은 구도가 돼요.
+ */
+.closet {
+  --tint: #c9b7c4;
+  --c-bg: color-mix(in srgb, var(--tint) 9%, #f5f0f1);
+  --c-ink: #3a3137;
+  --c-soft: #8d8189;
+  --c-line: color-mix(in srgb, var(--c-ink) 22%, transparent);
+  --u: min(1vw, 1.62vh);
+  --sans: 'Avenir Next', 'Helvetica Neue', 'Apple SD Gothic Neo', 'Pretendard', 'Noto Sans KR', system-ui, sans-serif;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  color: var(--c-ink);
+  font-family: var(--sans);
+  font-weight: 300;
+  background:
+    radial-gradient(ellipse 70% 80% at 32% 42%, rgba(255, 255, 255, 0.75), transparent 70%),
+    var(--c-bg);
+  transition: background-color 1.2s ease;
+  overflow: hidden;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .closet {
+    --c-bg: color-mix(in srgb, var(--tint) 10%, #1c181b);
+    --c-ink: #efe6ea;
+    --c-soft: #a2959d;
+    background: radial-gradient(ellipse 70% 80% at 32% 42%, rgba(255, 255, 255, 0.07), transparent 70%), var(--c-bg);
+  }
+}
+:root[data-theme='dark'] .closet {
+  --c-bg: color-mix(in srgb, var(--tint) 10%, #1c181b);
+  --c-ink: #efe6ea;
+  --c-soft: #a2959d;
+  background: radial-gradient(ellipse 70% 80% at 32% 42%, rgba(255, 255, 255, 0.07), transparent 70%), var(--c-bg);
+}
+:root[data-skin='modern'] .closet {
+  --c-bg: color-mix(in srgb, var(--tint) 5%, #f2f3f5);
+}
+
+.closet a,
+.closet button {
+  color: inherit;
+  font: inherit;
+}
+.closet .num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.14em;
+}
+.eyebrow {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.22em;
+  color: var(--c-soft);
+}
+.quiet {
+  color: var(--c-soft);
+  letter-spacing: 0.04em;
+}
+/* ── 이름표 고르기 ── */
+.who {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+}
+.who h1 {
+  font-weight: 200;
+  font-size: clamp(1.6rem, 4vw, 2.6rem);
+  letter-spacing: 0.12em;
+  margin: 0 0 18px;
+}
+.who-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.who-list li {
+  animation: who-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i) * 90ms + 120ms);
+}
+@keyframes who-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+}
+.who-name {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: auto auto;
+  column-gap: 14px;
+  align-items: baseline;
+  padding: 10px 18px;
+  font-size: clamp(1.5rem, 3.4vw, 2.3rem);
+  font-weight: 200;
+  letter-spacing: 0.18em;
+  transition: letter-spacing 0.6s cubic-bezier(0.16, 1, 0.3, 1), color 0.3s;
+}
+.who-name:hover {
+  letter-spacing: 0.3em;
+}
+.who-avatar {
+  font-size: 0.7em;
+}
+.who-count {
+  grid-column: 1 / -1;
+  font-size: 0.7rem;
+  letter-spacing: 0.22em;
+  color: var(--c-soft);
+}
+.who-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  justify-content: center;
+}
+.who-form input,
+.who-form select {
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--c-line);
+  padding: 10px 4px;
+  min-height: 44px;
+  font: inherit;
+  color: inherit;
+  letter-spacing: 0.1em;
+  outline: none;
+}
+.who-form input:focus {
+  border-color: var(--c-ink);
+}
+
+/* ── 레일 ── */
+.rail-view {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+.rail-stage {
+  position: absolute;
+  inset: 0;
+  perspective: calc(var(--u) * 115);
+  perspective-origin: 34% 30%;
+  touch-action: pan-y;
+  --mx: 0;
+  --my: 0;
+}
+.rail-space {
+  position: absolute;
+  left: 27vw;
+  top: calc(var(--u) * 3.2);
+  transform-style: preserve-3d;
+  transform: rotateY(calc(var(--mx) * 2.4deg)) rotateX(calc(var(--my) * -1.6deg));
+  transition: transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.rail-msg {
+  position: absolute;
+  top: calc(var(--u) * 20);
+  white-space: nowrap;
+}
+/* 레일: 옷걸이 고리들을 지나는 흰 봉. 방향은 slot()의 간격과 같은 각도 */
+.rail-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: calc(var(--u) * 150);
+  height: calc(var(--u) * 0.5);
+  border-radius: 999px;
+  transform-origin: 0 50%;
+  transform: translate3d(calc(var(--u) * -10.8), calc(var(--u) * -1.6), calc(var(--u) * 13.5)) rotateZ(9.46deg) rotateY(50.96deg);
+  background: linear-gradient(180deg, #fff, #e9e3e6 55%, #cfc6cb);
+  box-shadow: 0 calc(var(--u) * 0.5) calc(var(--u) * 1.2) rgba(80, 50, 70, 0.16);
+  mask-image: linear-gradient(90deg, #000 0 70%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, #000 0 70%, transparent);
+}
+.hang {
+  position: absolute;
+  left: calc(var(--u) * -20);
+  top: 0;
+  width: calc(var(--u) * 40);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  transform-origin: 50% 0;
+  transition:
+    transform 1.1s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.8s ease;
+  will-change: transform, opacity;
+  -webkit-tap-highlight-color: transparent;
+}
+.hang.jump {
+  transition: opacity 0.8s ease 0.2s;
+}
+.hang:focus-visible {
+  outline: none;
+}
+.hang:focus-visible .garment-art {
+  filter: drop-shadow(0 0 0.6vw color-mix(in srgb, var(--tint) 70%, #fff)) drop-shadow(calc(var(--u) * -1.2) calc(var(--u) * 2.4) calc(var(--u) * 2.2) rgba(80, 50, 70, 0.2));
+}
+.hang-sway {
+  display: block;
+  position: relative;
+  transform-origin: 50% 0;
+  animation: sway 7s ease-in-out infinite;
+}
+@keyframes sway {
+  50% {
+    transform: rotateZ(0.9deg);
+  }
+}
+.hang:not(.front):hover .hang-sway {
+  animation: nudge 0.9s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes nudge {
+  30% {
+    transform: rotateZ(-3deg) translateX(calc(var(--u) * -0.6));
+  }
+}
+.hang.front .hang-sway {
+  animation: settle 1.5s cubic-bezier(0.22, 1, 0.36, 1), sway 7s ease-in-out 1.5s infinite;
+}
+@keyframes settle {
+  0% {
+    transform: rotateZ(5deg);
+  }
+  35% {
+    transform: rotateZ(-3deg);
+  }
+  65% {
+    transform: rotateZ(1.4deg);
+  }
+  85% {
+    transform: rotateZ(-0.5deg);
+  }
+}
+.garment-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+  filter: drop-shadow(calc(var(--u) * -1.2) calc(var(--u) * 2.4) calc(var(--u) * 2.2) rgba(80, 50, 70, 0.2));
+  transition: filter 0.6s;
+}
+.hang.front .garment-art {
+  filter: drop-shadow(calc(var(--u) * -2) calc(var(--u) * 3.4) calc(var(--u) * 3) rgba(80, 50, 70, 0.24));
+}
+.hang.empty .garment-art {
+  opacity: 0.75;
+}
+.hang-plus {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  transform: translate(-50%, -50%);
+  width: calc(var(--u) * 9);
+  height: calc(var(--u) * 9);
+  border: 1px dashed var(--c-line);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: calc(var(--u) * 3);
+  font-weight: 200;
+  color: var(--c-soft);
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.3s, border-color 0.3s;
+}
+.hang.empty:hover .hang-plus {
+  transform: translate(-50%, -50%) scale(1.12) rotate(90deg);
+  color: var(--c-ink);
+  border-color: var(--c-ink);
+}
+
+/* 왼쪽 세로 눈금 */
+.rail-index {
+  position: absolute;
+  left: clamp(18px, 6vw, 84px);
+  top: 24%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.68rem;
+  color: var(--c-soft);
+  z-index: 3;
+}
+.rail-index i {
+  width: 1px;
+  height: 64px;
+  background: var(--c-line);
+  position: relative;
+}
+.rail-index b {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  background: var(--c-ink);
+  transition: height 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── 오른쪽 정보 ── */
+.closet .detail {
+  position: absolute;
+  right: clamp(18px, 8vw, 120px);
+  top: 11%;
+  width: min(30vw, 340px);
+  z-index: 4;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  max-height: none;
+  overflow: visible;
+  animation: none;
+}
+.detail > * {
+  animation: line-in 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.detail > :nth-child(2) { animation-delay: 60ms; }
+.detail > :nth-child(3) { animation-delay: 120ms; }
+.detail > :nth-child(4) { animation-delay: 170ms; }
+.detail > :nth-child(5) { animation-delay: 220ms; }
+.detail > :nth-child(6) { animation-delay: 270ms; }
+.detail > :nth-child(7) { animation-delay: 330ms; }
+@keyframes line-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+}
+.detail h1 {
+  margin: 22px 0 0;
+  font-size: clamp(1.5rem, 2.7vw, 2.3rem);
+  font-weight: 200;
+  letter-spacing: 0.16em;
+  line-height: 1.3;
+  word-break: keep-all;
+}
+.detail hr {
+  width: 18px;
+  margin: 20px 0;
+  border: 0;
+  border-top: 1px solid var(--c-soft);
+}
+.lede {
+  margin: 0 0 22px;
+  font-size: 0.92rem;
+  line-height: 1.8;
+  letter-spacing: 0.06em;
+  word-break: keep-all;
+}
+.thin-meter {
+  height: 1px;
+  background: var(--c-line);
+  margin-bottom: 26px;
+  position: relative;
+}
+.thin-meter i {
+  position: absolute;
+  left: 0;
+  top: -0.5px;
+  height: 2px;
+  background: var(--c-ink);
+  transition: width 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.closet .detail dl {
+  display: grid;
+  grid-template-columns: 6.5em 1fr;
+  gap: 9px 12px;
+  margin: 0 0 20px;
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+}
+.closet .detail dt {
+  color: var(--c-ink);
+  font-size: inherit;
+}
+.closet .detail dd {
+  margin: 0;
+  color: var(--c-soft);
+  line-height: 1.6;
+}
+.piece {
+  display: block;
+}
+.detail-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.cta {
+  display: inline-flex;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 0 9px;
+  margin-bottom: 10px;
+  font-size: 0.82rem;
+  letter-spacing: 0.24em;
+  font-weight: 400;
+  text-decoration: none;
+  border-bottom: 1px solid var(--c-ink);
+  transition: gap 0.45s cubic-bezier(0.16, 1, 0.3, 1), letter-spacing 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cta:hover {
+  gap: 22px;
+  letter-spacing: 0.3em;
+}
+.cta span {
+  transition: transform 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cta:hover span {
+  transform: translate(2px, -2px);
+}
+
+/* 화살표 */
+.rail-pager {
+  position: absolute;
+  right: clamp(18px, 8vw, 120px);
+  bottom: 7%;
+  width: min(30vw, 340px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  z-index: 4;
+}
+.rail-pager button {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 1.5rem;
+  font-weight: 200;
+  min-width: 48px;
+  min-height: 48px;
+  color: var(--c-soft);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), color 0.25s;
+}
+.rail-pager button:hover {
+  color: var(--c-ink);
+}
+.rail-pager button:first-child:hover {
+  transform: translateX(-6px);
+}
+.rail-pager button:last-child:hover {
+  transform: translateX(6px);
+}
+
+/* 바닥글 */
+.rail-foot {
+  position: absolute;
+  left: clamp(18px, 6vw, 88px);
+  right: clamp(18px, 8vw, 120px);
+  bottom: calc(6px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  color: var(--c-soft);
+  z-index: 6;
+}
+.rail-foot i {
+  font-style: normal;
+  margin: 0 0.6em;
+}
+.closet .drawer-sheet {
+  position: absolute;
+  right: 0;
+  bottom: 52px;
+  width: min(420px, 92vw);
+  max-height: 60vh;
+  overflow: auto;
+  padding: 18px 20px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--c-bg) 78%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid var(--c-line);
+  box-shadow: 0 30px 60px rgba(60, 40, 55, 0.18);
+  letter-spacing: 0.08em;
+  color: var(--c-ink);
+  animation: line-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  margin: 0;
+}
+.drawer-tabs {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+.drawer-tabs button:not(.linkish) {
+  background: none;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  padding: 10px 0;
+  cursor: pointer;
+  letter-spacing: 0.16em;
+  color: var(--c-soft);
+}
+.drawer-tabs button[aria-pressed='true'] {
+  color: var(--c-ink);
+  border-color: var(--c-ink);
+}
+.drawer-tabs .linkish {
+  margin-left: auto;
+}
+.closet .drawer-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.closet .drawer-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap;
+}
+.drawer-list img {
+  width: 54px;
+  height: auto;
+}
+.drawer-list div {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.drawer-list b {
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.drawer-list span {
+  font-size: 0.68rem;
+  color: var(--c-soft);
+}
+
+/* 다른 화면에서 쓰는 옷 한 벌 (마법사 마지막 단계 등) */
+.garment {
+  border: 0;
+  background: none;
+  padding: 0;
+  width: 100%;
+  cursor: pointer;
+  transform-origin: 50% 0;
+}
+.garment img {
+  width: 100%;
+  height: auto;
+  display: block;
+  filter: drop-shadow(-8px 18px 18px rgba(80, 50, 70, 0.22));
+}
+.garment.swing {
+  animation: settle 1.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── 좁은 화면: 레일이 위, 정보가 아래 ── */
+@media (max-width: 900px) {
+  .closet {
+    --u: min(1.9vw, 1.05vh);
+    overflow-y: auto;
+  }
+  .rail-view {
+    display: flex;
+    flex-direction: column;
+    min-height: auto;
+  }
+  .rail-stage {
+    position: relative;
+    inset: auto;
+    height: calc(var(--u) * 56);
+    flex: none;
+    perspective-origin: 40% 30%;
+  }
+  .rail-space {
+    left: 36vw;
+  }
+  .rail-index {
+    display: none;
+  }
+  .closet .detail,
+  .rail-pager,
+  .rail-foot {
+    position: static;
+    width: auto;
+    padding: 0 clamp(18px, 6vw, 40px);
+  }
+  .rail-pager {
+    order: 2;
+    margin: -8px 0 4px;
+  }
+  .closet .detail {
+    order: 3;
+  }
+  .rail-foot {
+    order: 4;
+    margin: 26px 0 calc(16px + env(safe-area-inset-bottom));
+    position: relative;
+  }
+  .rail-foot .hint {
+    display: none;
+  }
+  .closet .detail dl {
+    grid-template-columns: 7em 1fr;
+  }
+}
+
+.sub-actions {
+  display: flex;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+.thin-meter {
+  margin-bottom: 20px;
+}
+.lede {
+  margin-bottom: 16px;
+}
+.closet .linkish {
+  font-size: 0.74rem;
+}
+.closet .detail dd {
+  word-break: keep-all;
+}
+@media (max-width: 900px) {
+  .rail-stage {
+    height: calc(var(--u) * 49);
+  }
+  .rail-foot {
+    padding: 0 clamp(18px, 6vw, 40px);
+    left: auto;
+    right: auto;
+  }
+}

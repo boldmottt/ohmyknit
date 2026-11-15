@@ -1,0 +1,8 @@
+# ~/.cloudflared/config.yml 로 복사해서 쓰세요 (docs/SETUP.md 4단계)
+tunnel: knitcloset                     # cloudflared tunnel create knitcloset 으로 만든 이름
+credentials-file: /Users/<맥 사용자 이름>/.cloudflared/<터널 ID>.json
+
+ingress:
+  - hostname: knit.<내 도메인>         # Cloudflare에 연결된 도메인의 하위 주소
+    service: http://127.0.0.1:8787
+  - service: http_status:404
