@@ -135,8 +135,16 @@ export function linkedCounters(piece: ConvertedPiece, completedRows: number, cus
   return out;
 }
 
-/** 지시 카드 배색 설명: 현재 차트 줄의 색 구성 */
-export function colorRun(line: number[], palette: { name: string; hex: string }[]): string {
+/**
+ * 그 단을 차트 왼쪽부터 읽는지. 차트는 겉면에서 본 그림이라
+ * 평면뜨기의 안면 단(짝수 단)은 왼쪽 → 오른쪽으로, 그 밖에는 오른쪽 → 왼쪽으로 읽어요.
+ */
+export function readsFromLeft(piece: { construction: string }, row: number): boolean {
+  return piece.construction !== 'round' && row % 2 === 0;
+}
+
+/** 지시 카드 배색 설명: 현재 차트 줄의 색 구성을 뜨는 순서대로 */
+export function colorRun(line: number[], palette: { name: string; hex: string }[], fromLeft = false): string {
   const grid = line.filter((c) => c !== -1);
   if (grid.length === 0) return '';
   const runs: { c: number; n: number }[] = [];
@@ -146,9 +154,8 @@ export function colorRun(line: number[], palette: { name: string; hex: string }[
     else runs.push({ c, n: 1 });
   }
   if (runs.length === 1) return `${palette[runs[0]!.c]?.name ?? '바탕색'}만`;
-  // 실제로는 오른쪽에서 왼쪽으로 읽음
-  return [...runs]
-    .reverse()
+  // 차트 칸은 왼쪽부터 들어 있음. 겉면·원통뜨기는 오른쪽에서 왼쪽으로, 평면뜨기 안면 단은 왼쪽에서 오른쪽으로 뜸
+  return (fromLeft ? runs : [...runs].reverse())
     .map((r) => `${palette[r.c]?.name ?? `색${r.c}`} ${r.n}`)
     .join(' + ');
 }

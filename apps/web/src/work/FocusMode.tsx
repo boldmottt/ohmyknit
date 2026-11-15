@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ConvertedPiece } from '@knitcloset/gauge-engine';
 import type { Palette } from '@knitcloset/knit-render';
-import { colorRun, formatDuration, upcoming, type RowView } from '../derive';
+import { colorRun, formatDuration, readsFromLeft, upcoming, type RowView } from '../derive';
 import { pct } from '../ui';
 
 type Props = {
@@ -110,7 +110,7 @@ export function FocusMode({ piece, view, palette, progress, activeMs, onInc, onD
         <div className="focus-card">
           <div className="num">
             {r.stitchesWorked}코{sec?.instruction ? ` · ${sec.instruction}` : ''}
-            {chartLine ? ` · ${colorRun(chartLine, palette)} 반복` : ''}
+            {chartLine ? ` · ${readsFromLeft(piece, r.row) ? '(왼쪽부터) ' : ''}${colorRun(chartLine, palette, readsFromLeft(piece, r.row))} 반복` : ''}
           </div>
           {chartLine && (
             <div className="focus-chart">

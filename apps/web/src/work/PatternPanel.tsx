@@ -3,7 +3,7 @@ import type { ConvertedPiece } from '@knitcloset/gauge-engine';
 import { COLOR_SYMBOLS, shade, type Palette } from '@knitcloset/knit-render';
 import { NO_STITCH, realCells, TECHNIQUE_LABEL } from '@knitcloset/pattern-schema';
 import { fileUrl, type Note, type WorkData } from '../api';
-import { colorRun, pieceGauge, type RowView } from '../derive';
+import { colorRun, pieceGauge, readsFromLeft, type RowView } from '../derive';
 
 type Props = {
   data: WorkData;
@@ -132,7 +132,9 @@ function ChartTab({ piece, view, palette, symbols, hoverRow, onHoverRow, onPickR
           </span>
         ))}
       </div>
-      <p className="muted small">단 번호는 아래부터, 코는 오른쪽부터 읽어요. 줄을 누르면 그 단으로 이동해요.</p>
+      <p className="muted small">
+        단 번호는 아래부터 읽어요. {piece.construction === 'round' ? '코는 오른쪽부터 읽어요.' : '코는 겉면 단은 오른쪽부터, 안면 단은 왼쪽부터 읽어요.'} 줄을 누르면 그 단으로 이동해요.
+      </p>
     </div>
   );
 }
@@ -277,7 +279,7 @@ function CurrentRowCard({ data, piece, view, palette }: Props) {
       {sec.instruction && <div>{sec.instruction}</div>}
       {chartLine && (
         <div>
-          배색: {colorRun(chartLine, palette)} 반복 × {sec.chart?.shaped ? sec.chart.repeats : Math.floor(r.stitchesWorked / Math.max(1, realCells(chartLine).length))}
+          배색{readsFromLeft(piece, r.row) ? ' (안면 · 차트 왼쪽부터)' : ''}: {colorRun(chartLine, palette, readsFromLeft(piece, r.row))} 반복 × {sec.chart?.shaped ? sec.chart.repeats : Math.floor(r.stitchesWorked / Math.max(1, realCells(chartLine).length))}
         </div>
       )}
       <hr />

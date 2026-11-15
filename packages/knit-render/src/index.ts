@@ -304,8 +304,9 @@ export function drawProgress(ctx: Ctx, piece: ConvertedPiece, layout: FabricLayo
       const ratio = Math.min(1, o.currentStitch / current.stitchesWorked);
       ctx.fillStyle = o.highlight;
       ctx.globalAlpha = 0.35;
-      // 뜨개는 오른쪽에서 왼쪽으로 진행
-      ctx.fillRect(x0 + n * w * (1 - ratio), y, n * w * ratio, h);
+      // 겉면에서 보면 뜨개는 오른쪽에서 왼쪽으로 진행. 평면뜨기의 안면 단(짝수 단)은 반대로 왼쪽에서 오른쪽
+      const fromLeft = piece.construction !== 'round' && current.row % 2 === 0;
+      ctx.fillRect(fromLeft ? x0 : x0 + n * w * (1 - ratio), y, n * w * ratio, h);
       ctx.globalAlpha = 1;
     }
   }

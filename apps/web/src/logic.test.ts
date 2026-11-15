@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { convertPattern } from '@knitcloset/gauge-engine';
 import { parsePattern, SAMPLE_BEANIE, SAMPLE_PATTERN, type Pattern } from '@knitcloset/pattern-schema';
 import type { WorkData } from './api';
-import { checkinAdvice } from './derive';
+import { checkinAdvice, colorRun, readsFromLeft } from './derive';
 import { applyDesign, designFromPattern, designToPattern, isStandalone, resizeGrid } from './studio/design';
 
 const sweater = parsePattern(SAMPLE_PATTERN);
@@ -80,5 +80,22 @@ describe('스튜디오 저장', () => {
     const g = [[1, 2, 3]];
     expect(resizeGrid(g, 2, 1)).toEqual([[2, 3]]);
     expect(resizeGrid(g, 4, 1, 9)).toEqual([[9, 1, 2, 3]]);
+  });
+});
+
+describe('배색 줄 읽는 방향', () => {
+  const palette = [{ name: '바탕색', hex: '#000000' }, { name: '분홍', hex: '#ffffff' }];
+  // 차트에 그려진 그대로 (왼쪽 → 오른쪽): 분홍 3, 바탕색 2, 분홍 1
+  const line = [1, 1, 1, 0, 0, 1];
+
+  it('겉면·원통뜨기는 오른쪽부터, 평면뜨기 안면 단은 왼쪽부터', () => {
+    expect(colorRun(line, palette)).toBe('분홍 1 + 바탕색 2 + 분홍 3');
+    expect(colorRun(line, palette, true)).toBe('분홍 3 + 바탕색 2 + 분홍 1');
+  });
+
+  it('평면뜨기의 짝수 단만 왼쪽부터 읽음', () => {
+    expect(readsFromLeft({ construction: 'flat' }, 1)).toBe(false);
+    expect(readsFromLeft({ construction: 'flat' }, 2)).toBe(true);
+    expect(readsFromLeft({ construction: 'round' }, 2)).toBe(false);
   });
 });
