@@ -26,6 +26,15 @@ export const SizeValue = z.union([
 ]);
 export type SizeValue = z.infer<typeof SizeValue>;
 
+/** 단 수·콧수처럼 정수여야 하는 값 (min 이상). 소수나 0이 들어오면 변환이 조용히 어긋나서 저장할 때 막아요 */
+const intSize = (min: number, what: string) => {
+  const n = z
+    .number()
+    .int(`${what}는 정수여야 해요`)
+    .min(min, `${what}는 ${min} 이상이어야 해요`);
+  return z.union([n, z.record(z.string(), n)]);
+};
+
 /** 사이즈 라벨에 맞는 값을 꺼냅니다. 표에 없으면 오류. */
 export function resolveSize(value: SizeValue, size: string): number {
   if (typeof value === 'number') return value;
@@ -73,7 +82,11 @@ export const Chart = z.object({
    * 각 줄은 화면에 보이는 대로 왼쪽→오른쪽.
    * 실제 뜨기는 오른쪽→왼쪽으로 읽습니다.
    */
-  grid: z.array(z.array(z.number().int().min(NO_STITCH_VALUE))).min(1),
+  grid: z
+    .array(z.array(z.number().int().min(NO_STITCH_VALUE)).min(1, '차트에 빈 줄이 있어요'))
+    .min(1)
+    .refine((g) => g.every((line) => line.length === g[0]!.length), '차트의 모든 줄은 칸 수가 같아야 해요')
+    .refine((g) => g.every((line) => line.some((c) => c !== NO_STITCH_VALUE)), '차트에 뜨는 코가 하나도 없는 줄이 있어요'),
   /** 반복 단위 너비(코). 기본 = 차트 너비 */
   repeatW: z.number().int().positive().optional(),
   /** 디자인 스튜디오 미리보기 설정 (뜨기에는 영향 없음) */
@@ -99,13 +112,13 @@ export function chartHasNoStitch(grid: readonly (readonly number[])[]): boolean 
 
 export const Shaping = z.object({
   kind: z.enum(['inc', 'dec']),
-  everyRows: SizeValue,
-  times: SizeValue,
+  everyRows: intSize(1, '늘림·줄임 간격(단)'),
+  times: intSize(0, '늘림·줄임 횟수'),
   stitchesPerEvent: z.number().int().positive(),
   /** "마커 양옆", "양끝" */
   position: z.string().default(''),
   /** 섹션 안에서 이 늘림·줄임이 시작되기 전 단 수 (기본 0) */
-  afterRows: SizeValue.optional(),
+  afterRows: intSize(0, '시작 전 단 수').optional(),
 });
 export type Shaping = z.infer<typeof Shaping>;
 
@@ -125,7 +138,7 @@ export const Section = z.object({
   name: z.string().min(1),
   technique: Technique.default('stockinette'),
   /** 원본 도안의 단 수. 배색 차트 구간은 무늬 보존을 위해 변환하지 않음 */
-  rows: SizeValue,
+  rows: intSize(1, '단 수'),
   /** 이 구간의 기본 지시 ("겉뜨기", "2코 고무뜨기") */
   instruction: z.string().default(''),
   chart: Chart.optional(),
@@ -139,7 +152,7 @@ export const Piece = z.object({
   name: z.string().min(1),
   construction: z.enum(['flat', 'round']).default('flat'),
   direction: z.enum(['top_down', 'bottom_up']).default('bottom_up'),
-  castOn: SizeValue,
+  castOn: intSize(1, '코잡기 콧수'),
   /** 콧수가 반드시 이 값의 배수여야 할 때 (배색 반복, 고무뜨기 4코 등) */
   stitchMultiple: z.number().int().positive().optional(),
   /** 같은 조각을 여러 장 뜨는 경우 (소매 ×2) */
@@ -148,7 +161,13 @@ export const Piece = z.object({
 });
 export type Piece = z.infer<typeof Piece>;
 
-export const Pattern = z.object({
+/** 조각을 펼쳤을 때의 id (소매 ×2 → sleeve-1, sleeve-2). 변환 엔진과 같은 규칙 */
+export function expandedPieceIds(piece: { id: string; count?: number }): string[] {
+  const count = piece.count ?? 1;
+  return count > 1 ? Array.from({ length: count }, (_, i) => `${piece.id}-${i + 1}`) : [piece.id];
+}
+
+const PatternShape = z.object({
   title: z.string().min(1),
   designer: z.string().default(''),
   gauge: Gauge,
@@ -160,6 +179,27 @@ export const Pattern = z.object({
   pieces: z.array(Piece).min(1),
   /** 실 정보 메모 */
   yarn: z.string().default(''),
+});
+
+export const Pattern = PatternShape.superRefine((p, ctx) => {
+  // 조각 id는 진행 기록의 열쇠라서 겹치면 안 돼요 (여러 장 뜨는 조각을 펼친 id까지 포함)
+  const seen = new Set<string>();
+  p.pieces.forEach((piece, i) => {
+    for (const id of expandedPieceIds(piece)) {
+      if (seen.has(id)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['pieces', i, 'id'], message: `조각 id "${id}"가 겹쳐요. 조각마다 다른 id를 써 주세요` });
+      }
+      seen.add(id);
+    }
+  });
+  p.pieces.forEach((piece, pi) =>
+    piece.sections.forEach((sec, si) => {
+      const w = sec.chart?.grid[0]?.length;
+      if (sec.chart?.repeatW !== undefined && w !== undefined && sec.chart.repeatW > w) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['pieces', pi, 'sections', si, 'chart', 'repeatW'], message: `반복 너비(${sec.chart.repeatW})가 차트 너비(${w})보다 커요` });
+      }
+    }),
+  );
 });
 export type Pattern = z.infer<typeof Pattern>;
 export type PatternInput = z.input<typeof Pattern>;

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { convertPattern, replayEvents, type ProgressEvent } from '@knitcloset/gauge-engine';
 import { parsePattern, SAMPLE_PATTERN } from '@knitcloset/pattern-schema';
 import type { WorkData } from './api';
-import { db } from './offline';
+import { db, FLUSH_CHUNK, flushAll } from './offline';
 import { useWork } from './workStore';
 
 const converted = convertPattern(parsePattern(SAMPLE_PATTERN), { size: 'M', myGauge: { st: 25, row: 33 } });
@@ -160,5 +160,72 @@ describe('workStore', () => {
     await useWork.getState().flush();
     expect(useWork.getState().snapshots[pid]!.currentRow).toBe(4);
     expect(useWork.getState().merged).toEqual({ pieceId: pid, from: 1, to: 4 });
+  });
+
+  it('되돌리기: 단 이동과 코 위치 기록의 시각이 겹치지 않아 서버에서도 코 위치가 남음', async () => {
+    const { store } = fakeServer(0);
+    await useWork.getState().load(workData());
+    const pid = useWork.getState().activePieceId;
+    for (let i = 0; i < 20; i++) {
+      useWork.getState().jumpTo(5);
+      useWork.getState().setStitch(12);
+      useWork.getState().increment();
+      expect(useWork.getState().undo()).toBe(true);
+      expect(useWork.getState().snapshots[pid]).toMatchObject({ currentRow: 5, currentStitch: 12 });
+    }
+    await new Promise((r) => setTimeout(r, 30));
+    await useWork.getState().flush();
+    const sent = store.get(pid)!;
+    expect(new Set(sent.map((e) => e.at)).size).toBe(sent.length);
+    // 서버가 시각순으로 다시 재생해도 같은 결과
+    expect(replayEvents(sent, 1000)).toMatchObject({ currentRow: 5, currentStitch: 12 });
+  });
+
+  it('오래 쌓인 기록은 나눠 보냄', async () => {
+    const { store, fetchMock } = fakeServer(0);
+    await useWork.getState().load(workData());
+    const pid = useWork.getState().activePieceId;
+    await db.pending.bulkPut(
+      Array.from({ length: FLUSH_CHUNK * 2 + 10 }, (_, i) => ({
+        id: `old-${String(i).padStart(5, '0')}`, pieceId: pid, projectId: 'p1', type: 'row_inc' as const, fromRow: i, toRow: 0, at: 1000 + i,
+      })),
+    );
+    await useWork.getState().flush();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(store.get(pid)).toHaveLength(FLUSH_CHUNK * 2 + 10);
+    expect(await db.pending.count()).toBe(0);
+  });
+
+  it('서버가 거절한 기록 하나가 나머지를 막지 않음', async () => {
+    const accepted: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      const { events } = JSON.parse(String(init?.body)) as { events: ProgressEvent[] };
+      if (events.some((e) => e.id === 'bad')) return new Response(JSON.stringify({ error: '형식 오류' }), { status: 400 });
+      accepted.push(...events.map((e) => e.id));
+      return new Response(JSON.stringify({ currentRow: accepted.length, currentStitch: 0, stitchesDone: 0, frogCount: 0, frogRows: 0 }), { status: 200 });
+    }));
+    await useWork.getState().load(workData());
+    const pid = useWork.getState().activePieceId;
+    await db.pending.bulkPut(
+      ['a', 'bad', 'c'].map((id, i) => ({ id, pieceId: pid, projectId: 'p1', type: 'row_inc' as const, fromRow: i, toRow: 0, at: 1000 + i })),
+    );
+    await useWork.getState().flush();
+    expect(accepted).toEqual(['a', 'c']);
+    expect(await db.pending.count()).toBe(0);
+    expect(useWork.getState().sync).toBe('saved');
+  });
+
+  it('없어진 조각의 기록은 큐에서 빼고, 로그인 만료·서버 오류는 남겨 둠', async () => {
+    let status = 404;
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'x' }), { status })));
+    const put = () => db.pending.put({ id: 'gone', pieceId: 'p1:removed', projectId: 'p1', type: 'row_inc', fromRow: 0, toRow: 0, at: 1 });
+    await put();
+    await flushAll();
+    expect(await db.pending.count()).toBe(0);
+    for (status of [401, 500]) {
+      await put();
+      await expect(flushAll()).rejects.toThrow();
+      expect(await db.pending.count()).toBe(1);
+    }
   });
 });

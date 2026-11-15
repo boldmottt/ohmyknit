@@ -116,7 +116,7 @@ api.patch('/profiles/:id', async (c) => {
   if (!p) throw new NotFound('프로필을 찾을 수 없어요');
   await c.var.db.run(
     'UPDATE profiles SET name = ?, avatar = ?, color = ?, skin_id = ?, body_measurements = ? WHERE id = ?',
-    b.name ?? p.name,
+    b.name?.trim() || p.name,
     b.avatar ?? p.avatar,
     b.color ?? p.color,
     b.skinId ?? p.skin_id,
@@ -340,15 +340,36 @@ api.post('/patterns/:id/preview', async (c) => {
 
 /* ───────────── 파일 (R2) ───────────── */
 
+/**
+ * 올릴 수 있는 파일: 도안 PDF와 사진만.
+ * 파일은 앱과 같은 주소에서 내려가므로, HTML·SVG 같은 걸 받아 주면 그 안의 스크립트가 앱 권한으로 돌아요.
+ */
+const FILE_TYPES: Record<string, string> = {
+  pdf: 'application/pdf',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  heic: 'image/heic',
+  heif: 'image/heif',
+};
+const SAFE_TYPES = new Set(Object.values(FILE_TYPES));
+const MAX_FILE_BYTES = 30 * 1024 * 1024;
+
 api.post('/files', async (c) => {
   const form = await c.req.formData();
   const file = form.get('file') as unknown as File | string | null;
   if (!file || typeof file === 'string') throw new Error('파일이 필요해요');
+  if (file.size > MAX_FILE_BYTES) throw new Error('파일이 30MB보다 커요');
+  // 브라우저가 종류를 못 알려 주면(일부 기기의 HEIC 등) 확장자로 판단
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  const unknown = !file.type || file.type === 'application/octet-stream';
+  const type = SAFE_TYPES.has(file.type) ? file.type : unknown ? (FILE_TYPES[ext] ?? '') : '';
+  if (!type) throw new Error('PDF나 사진(JPG·PNG·WebP·GIF·HEIC)만 올릴 수 있어요');
   const safe = file.name.replace(/[^\w.\-가-힣]/g, '_').slice(-80);
   const key = `uploads/${uid()}-${safe}`;
-  await c.env.FILES.put(key, await file.arrayBuffer(), {
-    httpMetadata: { contentType: file.type || 'application/octet-stream' },
-  });
+  await c.env.FILES.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: type } });
   return c.json({ key }, 201);
 });
 
@@ -356,9 +377,14 @@ api.get('/files/*', async (c) => {
   const key = decodeURIComponent(c.req.path.replace(/^\/api\/files\//, ''));
   const obj = await c.env.FILES.get(key);
   if (!obj) throw new NotFound('파일이 없어요');
+  // 예전에 다른 종류로 올라간 파일은 화면에 띄우지 않고 내려받기만 되게 함
+  const stored = obj.httpMetadata?.contentType ?? '';
+  const safe = SAFE_TYPES.has(stored);
   return new Response(obj.body, {
     headers: {
-      'content-type': obj.httpMetadata?.contentType ?? 'application/octet-stream',
+      'content-type': safe ? stored : 'application/octet-stream',
+      'x-content-type-options': 'nosniff',
+      ...(safe ? {} : { 'content-disposition': 'attachment' }),
       'cache-control': 'private, max-age=31536000, immutable',
     },
   });
@@ -457,22 +483,32 @@ api.post('/projects/:id/finish', async (c) => {
   if (basis.swatchId) swatch = await db.first<SwatchRow>('SELECT * FROM swatches WHERE id = ?', basis.swatchId);
   // 학습하지 않는 경우: 실측이 없음 / 이미 한 번 반영함 (복원 후 다시 완성) / 바늘 교체 방식(쓴 게이지를 알 수 없음)
   const canLearn = Object.keys(measured).length > 0 && !already && p.conversion_mode !== 'needle';
+  // 뜨는 중에 게이지를 바꿨어도 이미 시작한 조각은 예전 게이지로 떴어요.
+  // 예상 치수의 기준이 되는 조각(첫 조각)을 실제로 뜬 게이지로 학습해야 계수가 틀어지지 않아요.
+  const used = converted?.pieces[0]?.gauge ?? { st: p.my_gauge_st, row: p.my_gauge_row };
+  // 계수 저장은 완성 기록과 한 묶음으로: 중간에 실패해서 다시 눌러도 두 번 학습되지 않게
+  const learnStmts: D1PreparedStatement[] = [];
   const learned = canLearn
-    ? await learnFromFinished(db, {
-        profileId: p.profile_id,
-        technique: pattern.gauge.technique ?? 'stockinette',
-        yarnWeight: swatch?.yarn_weight ?? 'dk',
-        needleMaterial: swatch?.needle_material ?? 'any',
-        usedSt: p.my_gauge_st,
-        usedRow: p.my_gauge_row,
-        swatchSt: basis.swatchSt,
-        swatchRow: basis.swatchRow,
-        expected,
-        measured,
-      })
+    ? await learnFromFinished(
+        db,
+        {
+          profileId: p.profile_id,
+          technique: pattern.gauge.technique ?? 'stockinette',
+          yarnWeight: swatch?.yarn_weight ?? 'dk',
+          needleMaterial: swatch?.needle_material ?? 'any',
+          usedSt: used.st,
+          usedRow: used.row,
+          swatchSt: basis.swatchSt,
+          swatchRow: basis.swatchRow,
+          expected,
+          measured,
+        },
+        learnStmts,
+      )
     : {};
   const t = now();
   await db.batch([
+    ...learnStmts,
     db.stmt("UPDATE projects SET status = 'finished', finished_at = ? WHERE id = ?", t, p.id),
     db.stmt(
       `INSERT INTO finished_records (project_id, measured, expected, k_actual_st, finished_at) VALUES (?, ?, ?, ?, ?)
@@ -609,7 +645,7 @@ api.get('/pieces/:id/events', async (c) => {
   const rows = await c.var.db.all<Record<string, unknown>>(
     'SELECT * FROM progress_events WHERE piece_id = ? ORDER BY at DESC, id DESC LIMIT ?',
     c.req.param('id'),
-    Math.min(500, Number(c.req.query('limit') ?? 100)),
+    Math.min(500, Math.max(1, Math.trunc(Number(c.req.query('limit') ?? 100)) || 100)),
   );
   return c.json(rows);
 });

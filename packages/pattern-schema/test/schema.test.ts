@@ -46,3 +46,30 @@ describe('코 없음 칸', () => {
     expect(() => parsePattern({ ...SAMPLE_BEANIE, pieces: [{ ...SAMPLE_BEANIE.pieces[0]!, sections: [{ name: 'x', rows: 1, chart: { grid: [[-2]] } }] }] })).toThrow();
   });
 });
+
+describe('저장 전에 막는 값', () => {
+  const body = SAMPLE_PATTERN.pieces[0]!;
+  const withBody = (over: object) => ({ ...SAMPLE_PATTERN, pieces: [{ ...body, ...over }] });
+  const sec = (over: object) => withBody({ sections: [{ name: 'x', rows: 4, ...over }] });
+
+  it('조각 id가 겹치면 거부 (여러 장 뜨는 조각을 펼친 id 포함)', () => {
+    expect(() => parsePattern({ ...SAMPLE_PATTERN, pieces: [body, body] })).toThrow(/겹쳐요/);
+    expect(() =>
+      parsePattern({ ...SAMPLE_PATTERN, pieces: [{ ...body, id: 'sleeve', count: 2 }, { ...body, id: 'sleeve-1' }] }),
+    ).toThrow(/sleeve-1/);
+  });
+
+  it('코잡기 0코, 소수 단 수는 거부', () => {
+    expect(() => parsePattern(withBody({ castOn: 0 }))).toThrow(/코잡기/);
+    expect(() => parsePattern(withBody({ castOn: { M: 100.5 } }))).toThrow(/정수/);
+    expect(() => parsePattern(sec({ rows: 4.5 }))).toThrow(/단 수/);
+    expect(() => parsePattern(sec({ rows: 0 }))).toThrow(/단 수/);
+  });
+
+  it('차트: 빈 줄, 줄마다 다른 칸 수, 코가 없는 줄, 너무 큰 반복 너비는 거부', () => {
+    expect(() => parsePattern(sec({ chart: { grid: [[]] } }))).toThrow(/빈 줄/);
+    expect(() => parsePattern(sec({ chart: { grid: [[0, 1, 0, 1], [0]] } }))).toThrow(/칸 수/);
+    expect(() => parsePattern(sec({ chart: { grid: [[0, 1], [NO_STITCH, NO_STITCH]] } }))).toThrow(/뜨는 코/);
+    expect(() => parsePattern(sec({ chart: { grid: [[0, 1]], repeatW: 3 } }))).toThrow(/반복 너비/);
+  });
+});

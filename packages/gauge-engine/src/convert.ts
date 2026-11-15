@@ -201,7 +201,7 @@ export function convertPattern(pattern: Pattern, options: ConvertOptions): Conve
         }
       }
       // 배색 차트 구간은 무늬 모양을 지키려고 단 수를 바꾸지 않음
-      let sectionRows = chart ? originalRows : Math.max(1, Math.round(originalRows * kRow));
+      let sectionRows = Math.max(1, Math.round(chart ? originalRows : originalRows * kRow));
 
       const eventsAt = new Map<number, ConvertedEvent[]>();
       const push = (r: number, e: ConvertedEvent) => {

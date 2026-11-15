@@ -217,6 +217,55 @@ describe('프로젝트 수명주기', () => {
     expect((await call('GET', `/api/projects/${projectId}/work`)).data.pieces[0].progress.currentRow).toBe(0);
   });
 
+  it('기기 시계가 앞서 있어도 그 기록이 계속 맨 뒤로 재생되지 않음', async () => {
+    const { projectId } = await newProject();
+    const pieceId = encodeURIComponent(`${projectId}:body`);
+    const future = Date.now() + 3 * 3600_000;
+    // 시계가 3시간 빠른 기기: 3단으로 이동 → 한 단 더
+    await call('POST', `/api/pieces/${pieceId}/events`, {
+      events: [
+        { id: 'f1', pieceId: 'x', type: 'jump', fromRow: 0, toRow: 3, at: future },
+        { id: 'f2', pieceId: 'x', type: 'row_inc', fromRow: 3, toRow: 0, at: future + 1000 },
+      ],
+    });
+    // 그 뒤에 시계가 맞는 기기에서 두 단
+    await new Promise((r) => setTimeout(r, 5));
+    const t = Date.now();
+    const { data } = await call('POST', `/api/pieces/${pieceId}/events`, {
+      events: [
+        { id: 'n1', pieceId: 'x', type: 'row_inc', fromRow: 4, toRow: 0, at: t },
+        { id: 'n2', pieceId: 'x', type: 'row_inc', fromRow: 5, toRow: 0, at: t + 1 },
+      ],
+    });
+    expect(data.currentRow).toBe(6);
+    const { data: log } = await call('GET', `/api/pieces/${pieceId}/events?limit=-1`);
+    expect(log).toHaveLength(1); // 음수 limit이 '전부'가 되지 않음
+    const { data: all } = await call('GET', `/api/pieces/${pieceId}/events`);
+    expect(all.every((e: any) => e.at <= Date.now())).toBe(true);
+    // 묶음 안의 순서는 그대로
+    expect(all.find((e: any) => e.id === 'f1').at).toBeLessThan(all.find((e: any) => e.id === 'f2').at);
+  });
+
+  it('뜨는 중에 게이지를 바꿔도 완성 학습은 실제로 뜬 게이지 기준', async () => {
+    const ids = await setup();
+    const { data: sw } = await call('POST', `/api/profiles/${ids.profileId}/swatches`, {
+      yarnWeight: 'dk', needleMm: 4, technique: 'stockinette', stsPost: 25, rowsPost: 33,
+    });
+    const { data: proj } = await call('POST', '/api/projects', {
+      ...ids, size: 'M', myGauge: { st: 25, row: 33 },
+      gaugeBasis: { swatchId: sw.id, swatchSt: 25, swatchRow: 33 },
+    });
+    // 몸판을 뜨기 시작한 뒤 프로젝트 게이지를 바꿈 → 몸판은 25코 게이지 그대로
+    await call('POST', `/api/pieces/${encodeURIComponent(`${proj.id}:body`)}/events`, {
+      events: [{ id: 'g1', pieceId: 'x', type: 'row_inc', fromRow: 0, toRow: 0, at: Date.now() }],
+    });
+    await call('POST', `/api/projects/${proj.id}/reconvert`, { myGauge: { st: 20, row: 28 } });
+    const { data } = await call('POST', `/api/projects/${proj.id}/finish`, { measured: { 가슴둘레: 89 } });
+    const exp = Math.round(91 * (91.2 / 90.9) * 10) / 10;
+    expect(data.expected['가슴둘레']).toBe(exp);
+    expect(data.learned.kActualSt).toBeCloseTo(exp / 89, 4);
+  });
+
   it('완성 실측으로 손 보정 계수 학습', async () => {
     const ids = await setup();
     const { data: sw } = await call('POST', `/api/profiles/${ids.profileId}/swatches`, {
@@ -274,6 +323,44 @@ describe('파일과 AI', () => {
     const down = await app.request(`/api/files/${key}`, {}, env);
     expect(down.headers.get('content-type')).toBe('application/pdf');
     expect(new Uint8Array(await down.arrayBuffer())).toEqual(new Uint8Array([37, 80, 68, 70]));
+  });
+
+  it('PDF·사진이 아닌 파일은 거부 (HTML을 올려 앱 주소에서 실행시키지 못하게)', async () => {
+    for (const [name, type] of [['x.html', 'text/html'], ['x.svg', 'image/svg+xml'], ['x.pdf', 'text/html'], ['x.bin', '']] as const) {
+      const form = new FormData();
+      form.append('file', new File(['<script>alert(1)</script>'], name, { type }));
+      const up = await app.request('/api/files', { method: 'POST', body: form }, env);
+      expect(up.status, name).toBe(400);
+    }
+    // 종류를 못 알려 주는 기기의 사진은 확장자로 받음
+    const form = new FormData();
+    form.append('file', new File([new Uint8Array([1, 2, 3])], 'IMG_0001.HEIC', { type: '' }));
+    const up = await app.request('/api/files', { method: 'POST', body: form }, env);
+    expect(up.status).toBe(201);
+    const down = await app.request(`/api/files/${((await up.json()) as { key: string }).key}`, {}, env);
+    expect(down.headers.get('content-type')).toBe('image/heic');
+    expect(down.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+
+  it('예전에 다른 종류로 저장된 파일은 내려받기로만 줌', async () => {
+    await env.FILES.put('uploads/old.html', new TextEncoder().encode('<script>1</script>').buffer as ArrayBuffer, { httpMetadata: { contentType: 'text/html' } });
+    const down = await app.request('/api/files/uploads/old.html', {}, env);
+    expect(down.headers.get('content-type')).toBe('application/octet-stream');
+    expect(down.headers.get('content-disposition')).toBe('attachment');
+  });
+
+  it('검증이 엄격해지기 전에 저장된 도안도 열 수 있음', async () => {
+    const { patternId } = await setup();
+    const { data: before } = await call('GET', `/api/patterns/${patternId}`);
+    const legacy = { ...before.pattern, pieces: before.pattern.pieces.map((p: any, i: number) => (i === 0 ? { ...p, castOn: 0 } : p)) };
+    await env.DB.prepare('UPDATE patterns SET original_json = ? WHERE id = ?').bind(JSON.stringify(legacy), patternId).run();
+    const { status, data } = await call('GET', `/api/patterns/${patternId}`);
+    expect(status).toBe(200);
+    expect(data.pattern.pieces[0].castOn).toBe(0);
+    // 고치지 않고 다시 저장하려 하면 이유와 함께 거부
+    const put = await call('PUT', `/api/patterns/${patternId}`, { pattern: legacy });
+    expect(put.status).toBe(400);
+    expect(put.data.error).toMatch(/코잡기/);
   });
 
   it('API 키가 없으면 501과 안내', async () => {

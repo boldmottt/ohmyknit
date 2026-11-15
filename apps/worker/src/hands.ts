@@ -128,6 +128,8 @@ export async function learnFromFinished(
     expected: Record<string, number>;
     measured: Record<string, number>;
   },
+  /** 주어지면 계수 저장을 바로 실행하지 않고 여기에 담아요 (완성 기록과 한 묶음으로 저장하려고) */
+  collect?: D1PreparedStatement[],
 ): Promise<{ kActualSt?: number; kActualRow?: number; coefficient?: { kSt: number; kRow: number; samples: number } }> {
   const ratios = (re: RegExp) => {
     const list: number[] = [];
@@ -161,20 +163,14 @@ export async function learnFromFinished(
     ? updateCoefficient({ k: prior.k_row, sampleCount: prior.sample_count }, actualRow / input.swatchRow, FINISHED_WEIGHT)
     : { k: prior.k_row, sampleCount: prior.sample_count + FINISHED_WEIGHT };
 
-  await db.run(
+  const sql =
     `INSERT INTO hand_coefficients (profile_id, technique, yarn_weight, needle_material, k_st, k_row, sample_count, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (profile_id, technique, yarn_weight, needle_material)
-     DO UPDATE SET k_st = excluded.k_st, k_row = excluded.k_row, sample_count = excluded.sample_count, updated_at = excluded.updated_at`,
-    input.profileId,
-    input.technique,
-    input.yarnWeight,
-    input.needleMaterial,
-    st.k,
-    row.k,
-    st.sampleCount,
-    now(),
-  );
+     DO UPDATE SET k_st = excluded.k_st, k_row = excluded.k_row, sample_count = excluded.sample_count, updated_at = excluded.updated_at`;
+  const params = [input.profileId, input.technique, input.yarnWeight, input.needleMaterial, st.k, row.k, st.sampleCount, now()] as const;
+  if (collect) collect.push(db.stmt(sql, ...params));
+  else await db.run(sql, ...params);
   return {
     kActualSt: actualSt !== undefined ? actualSt / input.swatchSt : undefined,
     kActualRow: actualRow !== undefined ? actualRow / input.swatchRow : undefined,

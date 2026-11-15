@@ -77,7 +77,14 @@ export type PatternRow = {
 export async function loadPattern(db: Db, id: string): Promise<{ row: PatternRow; pattern: Pattern }> {
   const row = await db.first<PatternRow>('SELECT * FROM patterns WHERE id = ?', id);
   if (!row) throw new NotFound('도안을 찾을 수 없어요');
-  return { row, pattern: parsePattern(JSON.parse(row.original_json)) };
+  const raw = JSON.parse(row.original_json) as unknown;
+  try {
+    return { row, pattern: parsePattern(raw) };
+  } catch {
+    // 검증 규칙이 더 엄격해지기 전에 저장된 도안: 그대로 열어서 편집 화면에서 고칠 수 있게 함
+    // (저장할 때는 항상 parsePattern을 거치므로 기본값은 이미 채워져 있어요)
+    return { row, pattern: raw as Pattern };
+  }
 }
 
 export class NotFound extends Error {}
@@ -315,6 +322,9 @@ export async function reconvertProject(
   return result;
 }
 
+/** 기기 시계가 이만큼 넘게 앞서 있으면 보정 */
+const CLOCK_SKEW_TOLERANCE_MS = 60_000;
+
 const EVENT_TYPES = new Set(['row_inc', 'row_dec', 'jump', 'frog', 'stitch', 'session_start', 'session_end']);
 
 type EventRow = {
@@ -381,7 +391,7 @@ export async function ingestEvents(db: Db, pieceId: string, events: ProgressEven
   if (!piece) throw new NotFound('조각을 찾을 수 없어요');
   const t = now();
   const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
-  const clean = normalizeEvents(
+  let clean = normalizeEvents(
     events
       .filter((e) => e && typeof e.id === 'string' && e.id.length > 0 && e.id.length <= 80)
       .filter((e) => EVENT_TYPES.has(e.type) && num(e.at) && e.at > 0)
@@ -390,6 +400,10 @@ export async function ingestEvents(db: Db, pieceId: string, events: ProgressEven
   if (clean.length < events.length) {
     throw new Error(`형식이 올바르지 않은 진행 기록이 ${events.length - clean.length}개 있어요`);
   }
+  // 기기 시계가 앞서 있으면 그 기록이 계속 "가장 나중"으로 재생돼서 다른 기기의 기록을 덮어요.
+  // 묶음 전체를 같은 만큼 당겨서 순서는 지키고, 서버 시각보다 미래로는 가지 않게 합니다.
+  const ahead = clean.reduce((m, e) => Math.max(m, e.at), 0) - t;
+  if (ahead > CLOCK_SKEW_TOLERANCE_MS) clean = clean.map((e) => ({ ...e, at: Math.max(1, e.at - ahead) }));
   await db.batch(
     clean.map((e) =>
       db.stmt(

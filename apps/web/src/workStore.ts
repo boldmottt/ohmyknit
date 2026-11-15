@@ -68,6 +68,13 @@ const emptySession = (): Session => ({ startedAt: null, activeMs: 0, lastActionA
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 /** 조작할 때마다 1씩 증가. 동기화 중에 새 조작이 있었으면 서버 결과로 덮어쓰지 않음 */
 let actSeq = 0;
+/**
+ * 이 기기에서 만든 기록의 시각은 항상 앞 기록보다 뒤가 되게 합니다.
+ * 서버는 시각순(같으면 id순)으로 재생하는데, 되돌리기처럼 같은 밀리초에 기록 두 개를 만들면
+ * 무작위 id 순서로 뒤집혀서 "단 이동"이 "코 위치"를 지워 버릴 수 있어요.
+ */
+let lastEventAt = 0;
+const nextEventAt = () => (lastEventAt = Math.max(Date.now(), lastEventAt + 1));
 
 export const useWork = create<WorkState>((set, get) => ({
   data: null,
@@ -127,7 +134,7 @@ export const useWork = create<WorkState>((set, get) => ({
     const piece = data.pieces.find((p) => p.id === activePieceId);
     if (!piece) return;
     const before = snapshots[piece.id] ?? EMPTY_SNAPSHOT;
-    const now = Date.now();
+    const now = nextEventAt();
     const e: ProgressEvent = {
       id: newEventId(),
       pieceId: piece.id,
