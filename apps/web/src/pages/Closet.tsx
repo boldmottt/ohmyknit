@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, onOfflineData, type Profile, type ProjectSummary } from '../api';
 import { emptyHangerArt, garmentArt } from '../closet/garmentArt';
-import { cacheWork } from '../offline';
+import { workArtUrl } from '../closet/assembledArt';
+import { cacheWork, cachedWork } from '../offline';
 import { daysSince, fmtDate, getStoredProfile, Modal, pct, reducedMotion, relDay, setStoredProfile, useToast } from '../ui';
 import { SiteHeader } from '../SiteHeader';
 import '../closet/closet.css';
@@ -220,25 +221,32 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
     },
   });
 
-  // 옷장을 열 때 각 작품의 작업 화면 자료도 미리 받아 둠 → 나중에 맥북이 꺼져 있어도 이어 뜰 수 있음
-  useEffect(() => {
-    const list = projects.data;
-    if (!list || !navigator.onLine) return;
-    let stop = false;
-    void (async () => {
-      for (const p of list.slice(0, 12)) {
-        if (stop) return;
+  // 옷장을 열 때 각 작품의 작업 화면 자료(변환된 도안 + 조각별 진행)를 받아 둠
+  // → 실제로 뜬 단까지만 그린 옷을 걸고, 맥북이 꺼져 있어도 이어 뜰 수 있게 캐시
+  const works = useQueries({
+    queries: (projects.data ?? []).slice(0, 16).map((p) => ({
+      queryKey: ['work-art', p.id, p.lastWorkedAt, p.stitchesDone],
+      queryFn: async () => {
         try {
-          await cacheWork(await api.work(p.id));
-        } catch {
-          return; // 연결이 끊겼으면 그만
+          const d = await api.work(p.id);
+          void cacheWork(d);
+          return d;
+        } catch (e) {
+          const c = await cachedWork(p.id);
+          if (c) return c;
+          throw e;
         }
-      }
-    })();
-    return () => {
-      stop = true;
-    };
-  }, [projects.data]);
+      },
+      staleTime: 60_000,
+      retry: false,
+    })),
+  });
+  const artById = new Map<string, string>();
+  for (const w of works) {
+    if (!w.data) continue;
+    const url = workArtUrl(w.data);
+    if (url) artById.set(w.data.project.id, url);
+  }
 
   const [offline, setOffline] = useState(false);
   useEffect(() => onOfflineData(setOffline), []);
@@ -280,7 +288,7 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
             const before = prevK.current.get(id);
             const jump = before !== undefined && Math.abs(before - k) > 1.5;
             prevK.current.set(id, k);
-            const src = it.type === 'new' ? emptyHangerArt() : garmentArt(it.project);
+            const src = it.type === 'new' ? emptyHangerArt() : (artById.get(it.project.id) ?? garmentArt(it.project));
             const label = it.type === 'new' ? '새 프로젝트 걸기' : `${it.project.name}, ${pct(it.project.progress)} 진행`;
             return (
               <button

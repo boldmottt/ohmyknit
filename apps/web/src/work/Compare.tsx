@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from 'react';
 import type { ProgressSnapshot } from '@knitcloset/gauge-engine';
 import type { WorkData } from '../api';
+import { artPieces, drawAssembled, type PlacedPiece } from '../closet/assembledArt';
 import { convertedPiece, expectedLengthCm, formatHours, overall, pieceStitchProgress, remainingMinutes } from '../derive';
 import { pct } from '../ui';
 
@@ -10,70 +12,60 @@ type Props = {
   onPick: (pieceId: string) => void;
 };
 
+const W = 560;
+const H = 600;
+
 /**
  * 완성본과 비교하기 (기획서 5.4 ②, F4-6).
- * 조각들을 조립된 모습으로 늘어놓고, 콧수 기준 진척도로 아래부터 칠합니다.
+ * 변환된 도안 그대로 조각마다 실제 니트를 그리고, **지금까지 뜬 단(과 코)까지만** 선명하게 보여요.
+ * 조각들은 실제 cm 비율로 옷 모양으로 조립합니다.
  */
 export function Compare({ data, snapshots, activePieceId, onPick }: Props) {
   const all = overall(data, snapshots);
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [placed, setPlaced] = useState<PlacedPiece[]>([]);
+  const convId = convertedPiece(data, activePieceId)?.id;
+
+  useEffect(() => {
+    const c = canvas.current;
+    if (!c) return;
+    const ctx = c.getContext('2d')!;
+    ctx.clearRect(0, 0, W, H);
+    const res = drawAssembled(ctx, { pieces: artPieces(data, snapshots), palette: data.converted.palette, width: W, height: H, hanger: false, activeId: convId });
+    setPlaced(res ?? []);
+  }, [data, snapshots, convId]);
+
   const pieces = data.pieces.map((p) => {
     const conv = convertedPiece(data, p.id)!;
     const snap = snapshots[p.id]!;
-    const prog = pieceStitchProgress(conv, snap);
-    const maxSt = Math.max(...conv.rows.map((r) => (conv.construction === 'round' ? r.stitchesWorked / 2 : r.stitchesWorked)));
-    return { p, conv, snap, prog, w: maxSt, h: conv.totalRows };
+    return { p, conv, prog: pieceStitchProgress(conv, snap) };
   });
-  // 가장 큰 조각을 가운데, 나머지는 양옆에 번갈아
-  const sorted = [...pieces].sort((a, b) => b.w * b.h - a.w * a.h);
-  const center = sorted[0]!;
-  const sides = sorted.slice(1);
-  const left = sides.filter((_, i) => i % 2 === 0);
-  const right = sides.filter((_, i) => i % 2 === 1);
-  const scale = 220 / Math.max(...pieces.map((x) => x.h), 1);
-  const gap = 10;
-  const order = [...left.reverse(), center, ...right];
-  let x = 0;
-  const placed = order.map((it) => {
-    const w = it.w * scale * 0.86;
-    const h = it.h * scale;
-    const r = { ...it, x, y: 240 - h, wPx: w, hPx: h };
-    x += w + gap;
-    return r;
-  });
-  const totalW = x - gap;
   const activeConv = convertedPiece(data, activePieceId);
   const activeSnap = snapshots[activePieceId];
   const remainMin = remainingMinutes(data, all.total - all.done);
 
+  const pickAt = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width) * W;
+    const y = ((e.clientY - r.top) / r.height) * H;
+    // 몸판이 맨 위에 그려지므로 뒤에서부터 찾음
+    const hit = [...placed].reverse().find((q) => x >= q.box.x && x <= q.box.x + q.box.w && y >= q.box.y && y <= q.box.y + q.box.h);
+    const st = hit && data.pieces.find((p) => convertedPiece(data, p.id)?.id === hit.id);
+    if (st) onPick(st.id);
+  };
+
   return (
     <div className="compare">
-      <svg viewBox={`-10 -10 ${totalW + 20} 270`} role="img" aria-label={`전체 ${pct(all.ratio)} 완성`}>
-        {placed.map(({ p, conv, prog, x: px, y, wPx, hPx }) => {
-          const fillH = hPx * prog.ratio;
-          const fromTop = conv.direction === 'top_down';
-          const isActive = p.id === activePieceId;
-          return (
-            <g key={p.id} onClick={() => onPick(p.id)} style={{ cursor: 'pointer' }}>
-              <rect x={px} y={y} width={wPx} height={hPx} rx={6} className="cmp-shape" strokeWidth={isActive ? 3 : 1} />
-              <rect
-                x={px}
-                y={fromTop ? y : y + hPx - fillH}
-                width={wPx}
-                height={fillH}
-                rx={6}
-                className="cmp-fill"
-                style={{ fill: data.converted.palette[0]?.hex }}
-              />
-              <text x={px + wPx / 2} y={y + hPx / 2 - 6} textAnchor="middle" className="cmp-label">
-                {p.name}
-              </text>
-              <text x={px + wPx / 2} y={y + hPx / 2 + 14} textAnchor="middle" className="cmp-label num">
-                {pct(prog.ratio)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+      <div className="cmp-art">
+        <canvas ref={canvas} width={W} height={H} onClick={pickAt} role="img" aria-label={`전체 ${pct(all.ratio)} 완성. 뜬 부분만 선명하게 보여요`} />
+        <div className="cmp-pieces" role="group" aria-label="조각">
+          {pieces.map(({ p, prog }) => (
+            <button key={p.id} className={`chip${p.id === activePieceId ? ' on' : ''}`} onClick={() => onPick(p.id)}>
+              {p.name} <span className="num">{pct(prog.ratio)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="cmp-sum">
         <b>전체 {pct(all.ratio)} 완성</b>
         {activeConv && activeSnap && (
@@ -85,7 +77,7 @@ export function Compare({ data, snapshots, activePieceId, onPick }: Props) {
           남은 코 약 {Math.max(0, all.total - all.done).toLocaleString('ko-KR')}코
           {remainMin !== null ? ` · 약 ${formatHours(remainMin)}` : ''}
         </div>
-        <div className="muted small">조각을 누르면 그 조각으로 이동해요</div>
+        <div className="muted small">옷의 조각이나 아래 이름을 누르면 그 조각으로 이동해요 · 선명한 부분이 실제로 뜬 곳이에요</div>
       </div>
     </div>
   );

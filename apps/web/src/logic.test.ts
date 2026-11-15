@@ -111,3 +111,42 @@ describe('AI가 준 JSON 읽기', () => {
     expect(() => parseLooseJson('도안을 못 읽었어요')).toThrow();
   });
 });
+
+import { artPieces, roles } from './closet/assembledArt';
+
+describe('뜬 만큼 보이는 옷 (조립 그림 재료)', () => {
+  const work = {
+    ...data,
+    pieces: converted.pieces.map((p, i) => ({
+      id: `p:${p.id}`,
+      key: p.id,
+      name: p.name,
+      totalRows: p.totalRows,
+      totalStitches: 0,
+      progress: { currentRow: i === 0 ? 40 : 10, currentStitch: 5, stitchesDone: 0, frogCount: 0, frogRows: 0, updatedAt: 0 },
+    })),
+  } as unknown as WorkData;
+
+  it('조각마다 실제 진행 단과 게이지를 씀, 작업 중이면 실시간 진행이 우선', () => {
+    const a = artPieces(work);
+    expect(a).toHaveLength(converted.pieces.length);
+    expect(a[0]!.completedRows).toBe(40);
+    expect(a[1]!.completedRows).toBe(10);
+    expect(a[0]!.gauge).toEqual({ st: 25, row: 33 });
+    const live = artPieces(work, { [`p:${body.id}`]: { currentRow: 41, currentStitch: 0, frogCount: 0, frogRows: 0, lastAt: 0 } });
+    expect(live[0]!.completedRows).toBe(41);
+    expect(live[1]!.completedRows).toBe(10);
+  });
+
+  it('몸판은 가운데, 소매 두 장은 왼쪽·오른쪽', () => {
+    const r = [...roles(artPieces(work)).entries()].map(([p, role]) => [p.piece.name, role]);
+    expect(r).toContainEqual([body.name, 'main']);
+    expect(r.filter(([, role]) => role === 'sleeveL' || role === 'sleeveR')).toHaveLength(2);
+  });
+
+  it('비니는 모자 한 조각만', () => {
+    const hat = convertPattern(parsePattern(SAMPLE_BEANIE), { size: '성인', myGauge: { st: 22, row: 30 } });
+    const r = roles(hat.pieces.map((piece) => ({ piece, completedRows: 0, gauge: { st: 22, row: 30 } })));
+    expect([...r.values()]).toEqual(['main']);
+  });
+});

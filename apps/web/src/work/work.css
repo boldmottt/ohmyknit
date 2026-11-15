@@ -398,24 +398,37 @@
   gap: 12px;
   overflow: auto;
 }
-.compare svg {
-  width: 100%;
-  max-height: 46vh;
+.cmp-art {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
-.cmp-shape {
-  fill: var(--bg);
-  stroke: var(--accent);
-  stroke-dasharray: 5 4;
+.cmp-art canvas {
+  width: min(100%, 420px);
+  max-height: 50vh;
+  object-fit: contain;
+  cursor: pointer;
+  background: radial-gradient(60% 55% at 50% 45%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 70%);
 }
-.cmp-fill {
-  opacity: 0.85;
+.cmp-pieces {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
 }
-.cmp-label {
-  font-size: 13px;
-  fill: var(--ink);
-  paint-order: stroke;
-  stroke: var(--paper);
-  stroke-width: 3px;
+.cmp-pieces .chip {
+  border: 1px solid var(--line, var(--panel-border));
+  background: transparent;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.cmp-pieces .chip.on {
+  background: var(--ink);
+  color: var(--paper, #fff);
 }
 .cmp-sum {
   text-align: center;
@@ -931,16 +944,6 @@
   border-top: 1px solid var(--line);
   padding: 10px clamp(12px, 2vw, 24px);
 }
-.cmp-shape {
-  fill: transparent;
-  stroke: var(--ink);
-  stroke-dasharray: 3 4;
-}
-.cmp-label {
-  letter-spacing: 0.1em;
-  font-weight: 300;
-}
-
 /* 진행 도크 */
 .dock {
   padding: clamp(14px, 2vw, 28px);
