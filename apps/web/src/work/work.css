@@ -1170,3 +1170,17 @@
     text-align: center;
   }
 }
+
+/* 집중 모드일 때 본 화면은 숨김 (창은 그 위에 뜸) */
+.work[hidden] {
+  display: none;
+}
+.focus-mode {
+  z-index: 80;
+}
+button.sync {
+  min-height: 0;
+  padding: 6px 0;
+  text-decoration: underline dotted;
+  text-underline-offset: 4px;
+}

@@ -1,5 +1,6 @@
 import {
   convertPattern,
+  knittingPace,
   normalizeEvents,
   pieceProgress,
   replayEvents,
@@ -218,16 +219,58 @@ export async function createProject(db: Db, input: CreateProjectInput): Promise<
 /**
  * 손 프로필이 바뀌었을 때 다시 변환합니다. 뜬 단 수는 유지하되 새 총 단 수를 넘지 않게 맞춥니다.
  */
+export type ReconvertResult = {
+  /** 이미 뜨기 시작해서 그대로 둔 조각 */
+  kept: string[];
+  /** 새 게이지로 다시 계산한 조각 */
+  updated: string[];
+};
+
+/**
+ * 손 프로필이 바뀌었을 때 다시 변환합니다 (F2-6).
+ *
+ * 이미 뜨기 시작한 조각은 건드리지 않아요. 코잡기 콧수가 바뀌면 지금까지 뜬 것과 맞지 않으니까요.
+ * 아직 시작하지 않은 조각만 새 게이지로 다시 계산하고, 도안이 바뀌어 조각이 늘거나 줄었으면 그것도 맞춥니다.
+ */
 export async function reconvertProject(
   db: Db,
   projectId: string,
   myGauge: { st: number; row: number },
   mode?: ConversionMode,
-): Promise<void> {
+): Promise<ReconvertResult> {
   const p = await db.first<ProjectRow>('SELECT * FROM projects WHERE id = ?', projectId);
   if (!p) throw new NotFound('프로젝트를 찾을 수 없어요');
   const { pattern } = await loadPattern(db, p.pattern_id);
-  const converted = convertPattern(pattern, { size: p.size_label, myGauge, mode: mode ?? p.conversion_mode });
+  const fresh = convertPattern(pattern, { size: p.size_label, myGauge, mode: mode ?? p.conversion_mode });
+  const old = json<ConvertedPattern | null>(p.converted_json, null);
+  const existing = await db.all<PieceRow & { current_row: number | null }>(
+    'SELECT pc.*, pr.current_row FROM pieces pc LEFT JOIN progress pr ON pr.piece_id = pc.id WHERE pc.project_id = ?',
+    projectId,
+  );
+  const started = new Set(existing.filter((x) => (x.current_row ?? 0) > 0).map((x) => x.piece_key));
+  const have = new Set(existing.map((x) => x.piece_key));
+
+  const result: ReconvertResult = { kept: [], updated: [] };
+  const pieces = fresh.pieces.map((pc) => {
+    const before = old?.pieces.find((x) => x.id === pc.id);
+    if (started.has(pc.id) && before) {
+      result.kept.push(before.name);
+      // 예전 변환에는 조각별 게이지가 없을 수 있어서 채워 둠
+      return { ...before, gauge: before.gauge ?? old!.myGauge };
+    }
+    result.updated.push(pc.name);
+    return pc;
+  });
+  // 도안에서는 없어졌지만 이미 뜨던 조각은 남겨 둠
+  for (const before of old?.pieces ?? []) {
+    if (started.has(before.id) && !pieces.some((x) => x.id === before.id)) {
+      result.kept.push(before.name);
+      pieces.push({ ...before, gauge: before.gauge ?? old!.myGauge });
+    }
+  }
+  const converted: ConvertedPattern = { ...fresh, pieces };
+
+  const t = now();
   const stmts = [
     db.stmt(
       'UPDATE projects SET my_gauge_st = ?, my_gauge_row = ?, conversion_mode = ?, converted_json = ?, total_stitches = ? WHERE id = ?',
@@ -235,23 +278,44 @@ export async function reconvertProject(
       myGauge.row,
       converted.mode,
       JSON.stringify(converted),
-      converted.pieces.reduce((s, x) => s + x.totalStitches, 0),
+      pieces.reduce((s, x) => s + x.totalStitches, 0),
       projectId,
     ),
   ];
-  for (const pc of converted.pieces) {
-    stmts.push(
-      db.stmt(
-        'UPDATE pieces SET total_rows = ?, total_stitches = ? WHERE id = ?',
-        pc.totalRows,
-        pc.totalStitches,
-        `${projectId}:${pc.id}`,
-      ),
-    );
+  pieces.forEach((pc, i) => {
+    const pieceId = `${projectId}:${pc.id}`;
+    if (have.has(pc.id)) {
+      stmts.push(
+        db.stmt('UPDATE pieces SET name = ?, ord = ?, total_rows = ?, total_stitches = ? WHERE id = ?', pc.name, i, pc.totalRows, pc.totalStitches, pieceId),
+      );
+    } else {
+      stmts.push(
+        db.stmt(
+          `INSERT INTO pieces (id, project_id, piece_key, name, ord, construction, direction, total_rows, total_stitches)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          pieceId,
+          projectId,
+          pc.id,
+          pc.name,
+          i,
+          pc.construction,
+          pc.direction,
+          pc.totalRows,
+          pc.totalStitches,
+        ),
+        db.stmt('INSERT INTO progress (piece_id, updated_at) VALUES (?, ?)', pieceId, t),
+      );
+    }
+  });
+  for (const x of existing) {
+    if (!pieces.some((pc) => pc.id === x.piece_key)) stmts.push(db.stmt('DELETE FROM pieces WHERE id = ?', x.id));
   }
   await db.batch(stmts);
-  for (const pc of converted.pieces) await recomputeProgress(db, `${projectId}:${pc.id}`);
+  for (const pc of pieces) await recomputeProgress(db, `${projectId}:${pc.id}`);
+  return result;
 }
+
+const EVENT_TYPES = new Set(['row_inc', 'row_dec', 'jump', 'frog', 'stitch', 'session_start', 'session_end']);
 
 type EventRow = {
   id: string;
@@ -316,7 +380,16 @@ export async function ingestEvents(db: Db, pieceId: string, events: ProgressEven
   const piece = await db.first<PieceRow>('SELECT * FROM pieces WHERE id = ?', pieceId);
   if (!piece) throw new NotFound('조각을 찾을 수 없어요');
   const t = now();
-  const clean = normalizeEvents(events.filter((e) => e && typeof e.id === 'string' && e.id.length > 0));
+  const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v);
+  const clean = normalizeEvents(
+    events
+      .filter((e) => e && typeof e.id === 'string' && e.id.length > 0 && e.id.length <= 80)
+      .filter((e) => EVENT_TYPES.has(e.type) && num(e.at) && e.at > 0)
+      .map((e) => ({ ...e, fromRow: num(e.fromRow) ? e.fromRow : 0, toRow: num(e.toRow) ? e.toRow : 0 })),
+  );
+  if (clean.length < events.length) {
+    throw new Error(`형식이 올바르지 않은 진행 기록이 ${events.length - clean.length}개 있어요`);
+  }
   await db.batch(
     clean.map((e) =>
       db.stmt(
@@ -347,6 +420,10 @@ export async function ingestEvents(db: Db, pieceId: string, events: ProgressEven
 }
 
 /** 작업 속도 (분당 코 수). 최근 30일 이벤트, 5분 넘게 쉰 구간은 제외 */
+/**
+ * 작업 속도 (분당 코 수). 최근 30일 이벤트 기준.
+ * 쉰 구간과 몰아서 누른 단은 knittingPace가 걸러 줍니다.
+ */
 export async function knittingSpeed(db: Db, projectId: string, converted: ConvertedPattern) {
   const since = now() - 30 * 24 * 3600_000;
   const rows = await db.all<EventRow>(
@@ -355,20 +432,7 @@ export async function knittingSpeed(db: Db, projectId: string, converted: Conver
     projectId,
     since,
   );
-  const IDLE = 5 * 60_000;
-  let activeMs = 0;
-  let stitches = 0;
-  for (let i = 0; i < rows.length; i++) {
-    const e = rows[i]!;
-    if (i > 0) {
-      const gap = e.at - rows[i - 1]!.at;
-      if (gap <= IDLE) activeMs += gap;
-    }
-    if (e.type === 'row_inc') {
-      const key = e.piece_id.slice(projectId.length + 1);
-      const cp = converted.pieces.find((p) => p.id === key);
-      stitches += cp?.rows[e.from_row]?.stitchesWorked ?? 0;
-    }
-  }
-  return { activeMs, stitches, stitchesPerMinute: activeMs > 60_000 ? stitches / (activeMs / 60_000) : null };
+  const byKey = new Map(converted.pieces.map((pc) => [`${projectId}:${pc.id}`, pc]));
+  const pace = knittingPace(rows.map(toEvent), (pieceId, rowIndex) => byKey.get(pieceId)?.rows[rowIndex]?.stitchesWorked ?? 0);
+  return { activeMs: pace.activeMs, stitches: pace.stitches, stitchesPerMinute: pace.stitchesPerMinute };
 }

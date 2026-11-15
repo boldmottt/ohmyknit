@@ -34,6 +34,55 @@ async function req<T>(method: string, path: string, body?: unknown): Promise<T> 
   return data as T;
 }
 
+/**
+ * 옷장을 여는 데 필요한 목록은 마지막으로 받은 것을 기기에 남겨 둡니다.
+ * 맥북이 잠들었거나 집 밖이어도 옷장이 열리고, 거기서 작업 화면(따로 캐시됨)으로 들어갈 수 있어요.
+ */
+const CACHE_PREFIX = 'kc.cache:';
+let servedFromCache = false;
+const offlineListeners = new Set<(offline: boolean) => void>();
+
+function setServedFromCache(v: boolean) {
+  if (servedFromCache === v) return;
+  servedFromCache = v;
+  offlineListeners.forEach((f) => f(v));
+}
+
+/** 지금 화면의 목록이 기기에 남겨 둔 것인지 알려 줌 (구독 해제 함수를 돌려줌) */
+export function onOfflineData(f: (offline: boolean) => void): () => void {
+  offlineListeners.add(f);
+  f(servedFromCache);
+  return () => void offlineListeners.delete(f);
+}
+
+async function cachedGet<T>(path: string): Promise<T> {
+  try {
+    const data = await req<T>('GET', path);
+    try {
+      localStorage.setItem(CACHE_PREFIX + path, JSON.stringify(data));
+    } catch {
+      /* 저장 공간이 없으면 캐시 없이 동작 */
+    }
+    setServedFromCache(false);
+    return data;
+  } catch (e) {
+    // 서버에 닿지 않을 때만 (오프라인, 로그인 만료로 JSON이 아닌 응답) 남겨 둔 것을 씀
+    const unreachable = e instanceof ApiError && (e.status === 0 || e.message.includes('서버 응답을 읽지 못했어요'));
+    if (unreachable) {
+      try {
+        const hit = localStorage.getItem(CACHE_PREFIX + path);
+        if (hit) {
+          setServedFromCache(true);
+          return JSON.parse(hit) as T;
+        }
+      } catch {
+        /* 무시 */
+      }
+    }
+    throw e;
+  }
+}
+
 export type Profile = {
   id: string;
   name: string;
@@ -213,12 +262,12 @@ export type LibraryYarn = {
 export type YarnPage = { items: LibraryYarn[]; total: number; page: number; pages: number; brands: string[]; families: string[] };
 
 export const api = {
-  profiles: () => req<Profile[]>('GET', '/profiles'),
+  profiles: () => cachedGet<Profile[]>('/profiles'),
   createProfile: (b: { name: string; avatar?: string; color?: string }) => req<{ id: string }>('POST', '/profiles', b),
   updateProfile: (id: string, b: Partial<Pick<Profile, 'name' | 'avatar' | 'color' | 'skinId' | 'bodyMeasurements'>>) =>
     req('PATCH', `/profiles/${id}`, b),
   projects: (profileId: string, status: 'active' | 'archived' | 'finished' = 'active') =>
-    req<ProjectSummary[]>('GET', `/profiles/${profileId}/projects?status=${status}`),
+    cachedGet<ProjectSummary[]>(`/profiles/${profileId}/projects?status=${status}`),
   project: (id: string) => req<ProjectSummary>('GET', `/projects/${id}`),
   createProject: (b: {
     profileId: string;
@@ -244,7 +293,7 @@ export const api = {
       { measured },
     ),
   reconvert: (id: string, myGauge: { st: number; row: number }, mode?: 'recalc' | 'needle') =>
-    req('POST', `/projects/${id}/reconvert`, { myGauge, mode }),
+    req<{ kept: string[]; updated: string[] }>('POST', `/projects/${id}/reconvert`, { myGauge, mode }),
   logYarn: (id: string, gramsUsed: number) => req('POST', `/projects/${id}/yarn`, { gramsUsed }),
   work: (id: string) => req<WorkData>('GET', `/projects/${id}/work`),
   sendEvents: (pieceId: string, events: ProgressEvent[]) =>

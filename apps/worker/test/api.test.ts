@@ -113,9 +113,10 @@ describe('프로젝트 수명주기', () => {
   it('이벤트 동기화: 중복 무시, 진척도 계산, 최근 작업일 갱신', async () => {
     const { projectId, profileId } = await newProject();
     const pieceId = `${projectId}:body`;
-    const t = Date.now() - 10 * 60_000;
+    // 228코 한 단에 2분씩 (분당 114코: 빠른 편이지만 가능한 속도)
+    const t = Date.now() - 20 * 60_000;
     const events = Array.from({ length: 10 }, (_, i) => ({
-      id: `ev-${i}`, pieceId, type: 'row_inc', fromRow: i, toRow: i + 1, at: t + i * 60_000, device: 'ipad',
+      id: `ev-${i}`, pieceId, type: 'row_inc', fromRow: i, toRow: i + 1, at: t + i * 120_000, device: 'ipad',
     }));
     const r1 = await call('POST', `/api/pieces/${encodeURIComponent(pieceId)}/events`, { events });
     expect(r1.data.currentRow).toBe(10);
@@ -126,12 +127,13 @@ describe('프로젝트 수명주기', () => {
     expect(r2.data.eventCount).toBe(10);
 
     const { data: list } = await call('GET', `/api/profiles/${profileId}/projects`);
-    expect(list[0].lastWorkedAt).toBe(t + 9 * 60_000);
+    expect(list[0].lastWorkedAt).toBe(t + 9 * 120_000);
     expect(list[0].progress).toBeGreaterThan(0);
 
     const { data: work } = await call('GET', `/api/projects/${projectId}/work`);
-    expect(work.speed.activeMs).toBe(9 * 60_000);
-    expect(work.speed.stitchesPerMinute).toBeCloseTo(2280 / 9, 5);
+    // 첫 +1은 시작 시각을 모르니 빼고, 나머지 9단(각 2분, 228코)만 속도에 반영
+    expect(work.speed.activeMs).toBe(9 * 120_000);
+    expect(work.speed.stitchesPerMinute).toBeCloseTo(114, 5);
   });
 
   it('풀기 기록', async () => {
@@ -172,17 +174,47 @@ describe('프로젝트 수명주기', () => {
     expect((await call('GET', `/api/projects/${projectId}`)).status).toBe(404);
   });
 
-  it('재변환해도 뜬 단은 유지', async () => {
+  it('재변환: 뜨기 시작한 조각은 그대로, 안 뜬 조각만 새 게이지로', async () => {
     const { projectId } = await newProject();
-    const pieceId = `${projectId}:body`;
-    await call('POST', `/api/pieces/${encodeURIComponent(pieceId)}/events`, {
+    await call('POST', `/api/pieces/${encodeURIComponent(`${projectId}:body`)}/events`, {
       events: [{ id: 'j', type: 'jump', fromRow: 0, toRow: 30, at: 1 }],
     });
-    await call('POST', `/api/projects/${projectId}/reconvert`, { myGauge: { st: 24, row: 32 } });
+    const r = await call('POST', `/api/projects/${projectId}/reconvert`, { myGauge: { st: 24, row: 32 } });
+    expect(r.data.kept).toEqual(['몸판']);
+    expect(r.data.updated).toEqual(['소매 1', '소매 2']);
     const { data } = await call('GET', `/api/projects/${projectId}/work`);
     expect(data.project.myGauge.st).toBe(24);
+    // 몸판은 이미 228코로 뜨고 있으니 그대로
+    expect(data.converted.pieces[0].castOn.value).toBe(228);
+    expect(data.converted.pieces[0].gauge).toEqual({ st: 25, row: 33 });
     expect(data.pieces[0].progress.currentRow).toBe(30);
-    expect(data.converted.pieces[0].castOn.value).toBe(216); // 200 × 24/22 = 218.2 → 12의 배수 216
+    // 소매는 아직 안 떴으니 새 게이지: 48 × 24/22 = 52.4 → 4의 배수 52
+    expect(data.converted.pieces[1].castOn.value).toBe(52);
+    expect(data.converted.pieces[1].gauge).toEqual({ st: 24, row: 32 });
+    expect(data.pieces[1].totalRows).toBe(data.converted.pieces[1].totalRows);
+  });
+
+  it('재변환: 도안에서 조각이 바뀌면 조각 목록도 맞춤', async () => {
+    const { projectId, patternId } = await newProject();
+    const { data: pat } = await call('GET', `/api/patterns/${patternId}`);
+    const next = structuredClone(pat.pattern);
+    next.pieces[1].count = 1; // 소매 2장 → 1장 (조각 id가 sleeve-1, sleeve-2 → sleeve)
+    next.pieces.push({ id: 'pocket', name: '주머니', castOn: 20, sections: [{ name: '몸통', rows: 20 }] });
+    await call('PUT', `/api/patterns/${patternId}`, { pattern: next });
+    await call('POST', `/api/projects/${projectId}/reconvert`, { myGauge: { st: 25, row: 33 } });
+    const { data } = await call('GET', `/api/projects/${projectId}/work`);
+    expect(data.pieces.map((x: any) => x.name)).toEqual(['몸판', '소매', '주머니']);
+    expect(data.converted.pieces.map((x: any) => x.name)).toEqual(['몸판', '소매', '주머니']);
+  });
+
+  it('형식이 틀린 진행 기록은 거부', async () => {
+    const { projectId } = await newProject();
+    const pieceId = encodeURIComponent(`${projectId}:body`);
+    const bad = await call('POST', `/api/pieces/${pieceId}/events`, { events: [{ id: 'x', type: 'teleport', fromRow: 0, toRow: 5, at: 1 }] });
+    expect(bad.status).toBe(400);
+    const bad2 = await call('POST', `/api/pieces/${pieceId}/events`, { events: [{ id: 'y', type: 'jump', fromRow: 0, toRow: 5, at: 'now' }] });
+    expect(bad2.status).toBe(400);
+    expect((await call('GET', `/api/projects/${projectId}/work`)).data.pieces[0].progress.currentRow).toBe(0);
   });
 
   it('완성 실측으로 손 보정 계수 학습', async () => {
@@ -194,11 +226,15 @@ describe('프로젝트 수명주기', () => {
       ...ids, size: 'M', myGauge: { st: 25, row: 33 },
       gaugeBasis: { swatchId: sw.id, swatchSt: 25, swatchRow: 33 },
     });
-    // 예상 가슴둘레 91cm인데 89cm로 나옴 → 큰 작품에서 더 쫀쫀
+    // 228코로 떴으니 예상 가슴둘레는 91.2cm (설계 91cm × 91.2/90.9). 89cm로 나옴 → 큰 작품에서 더 쫀쫀
     const { data } = await call('POST', `/api/projects/${proj.id}/finish`, { measured: { 가슴둘레: 89 } });
-    expect(data.learned.kActualSt).toBeCloseTo(91 / 89, 4);
-    // 기준선 1 (가중치 1) + 표본 1.0225 (가중치 2) → 1.015
-    expect(data.learned.coefficient.kSt).toBeCloseTo((1 + (91 / 89) * 2) / 3, 4);
+    const exp = Math.round(91 * (91.2 / 90.9) * 10) / 10;
+    expect(data.expected['가슴둘레']).toBe(exp);
+    const k = exp / 89;
+    expect(data.learned.kActualSt).toBeCloseTo(k, 4);
+    // 기준선 1 (가중치 1) + 표본 (가중치 2)
+    const coef = (1 + k * 2) / 3;
+    expect(data.learned.coefficient.kSt).toBeCloseTo(coef, 4);
 
     const { data: hands } = await call('GET', `/api/profiles/${ids.profileId}/hands`);
     expect(hands.coefficients).toHaveLength(1);
@@ -206,7 +242,25 @@ describe('프로젝트 수명주기', () => {
 
     const { data: sug } = await call('GET', `/api/profiles/${ids.profileId}/suggest-gauge?patternSt=22&patternRow=30&yarnWeight=dk&technique=stockinette`);
     expect(sug.source).toBe('swatch+coef');
-    expect(sug.st).toBeCloseTo(25 * ((1 + (91 / 89) * 2) / 3), 1);
+    expect(sug.st).toBeCloseTo(25 * coef, 1);
+
+    // 서랍에서 다시 걸었다가 한 번 더 완성해도 계수가 두 번 반영되지 않음
+    await call('POST', `/api/projects/${proj.id}/restore`);
+    const again = await call('POST', `/api/projects/${proj.id}/finish`, { measured: { 가슴둘레: 80 } });
+    expect(again.data.learned.coefficient).toBeUndefined();
+    const { data: hands2 } = await call('GET', `/api/profiles/${ids.profileId}/hands`);
+    expect(hands2.coefficients[0].kSt).toBeCloseTo(coef, 4);
+  });
+
+  it('바늘 교체 방식은 완성 실측으로 학습하지 않음 (실제로 쓴 게이지를 알 수 없음)', async () => {
+    const ids = await setup();
+    const { data: sw } = await call('POST', `/api/profiles/${ids.profileId}/swatches`, { yarnWeight: 'dk', needleMm: 4, stsPost: 25, rowsPost: 33 });
+    const { data: proj } = await call('POST', '/api/projects', {
+      ...ids, size: 'M', myGauge: { st: 25, row: 33 }, mode: 'needle', gaugeBasis: { swatchId: sw.id, swatchSt: 25, swatchRow: 33 },
+    });
+    const { data } = await call('POST', `/api/projects/${proj.id}/finish`, { measured: { 가슴둘레: 89 } });
+    expect(data.learned.coefficient).toBeUndefined();
+    expect((await call('GET', `/api/profiles/${ids.profileId}/hands`)).data.coefficients).toHaveLength(0);
   });
 });
 

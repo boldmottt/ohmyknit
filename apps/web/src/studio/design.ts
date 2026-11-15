@@ -106,18 +106,40 @@ export function designFromPattern(p: Pattern, ref: ChartRef): Design | null {
   };
 }
 
-/** 열어 둔 도안의 그 구간에 차트·실·게이지를 다시 넣음 */
-export function applyDesign(p: Pattern, ref: ChartRef, d: Design): Pattern {
+/** 스튜디오에서 만든 도안(조각 1개, 차트 구간 1개)인지. 그렇다면 디자인이 도안 전체를 정함 */
+export function isStandalone(p: Pattern | PatternInput, sourceType: string): boolean {
+  return sourceType === 'design' && p.pieces.length === 1 && p.pieces[0]!.sections.length === 1 && !!p.pieces[0]!.sections[0]!.chart;
+}
+
+/**
+ * 열어 둔 도안의 그 구간에 디자인을 다시 넣습니다.
+ *
+ * - 차트 높이가 바뀌면 구간 단 수도 같은 반복 횟수로 맞춤 (안 그러면 늘린 줄이 뜰 때 잘려요)
+ * - 스튜디오에서 만든 도안이면 코잡기·게이지·방향까지 디자인대로 다시 만듦
+ * - 다른 도안(스웨터의 한 구간 등)이면 그 구간의 차트·설명과 실 색만 바꾸고 나머지는 건드리지 않음
+ */
+export function applyDesign(p: Pattern, ref: ChartRef, d: Design, standalone = false): Pattern {
+  if (standalone) {
+    const made = designToPattern(d);
+    return { ...structuredClone(p), ...made, designer: p.designer, sizes: made.sizes, pieces: made.pieces } as Pattern;
+  }
   const next = structuredClone(p);
   const sec = next.pieces[ref.pieceIndex]!.sections[ref.sectionIndex]!;
+  const oldH = sec.chart?.grid.length ?? 0;
+  const newH = d.grid.length;
+  if (oldH > 0 && newH !== oldH) {
+    const scale = (rows: number) => newH * Math.max(1, Math.round(rows / oldH));
+    sec.rows = typeof sec.rows === 'number' ? scale(sec.rows) : Object.fromEntries(Object.entries(sec.rows).map(([k, v]) => [k, scale(v)]));
+  }
   sec.chart = {
     ...sec.chart,
     grid: d.grid,
     repeatW: gridW(d.grid),
     preview: { repeatsX: d.repeatsX, repeatsY: d.repeatsY, renderAs: d.renderAs },
   };
+  if (d.description.trim()) sec.instruction = d.description.trim();
   next.palette = d.yarns;
-  next.title = d.name || next.title;
+  next.title = d.name.trim() || next.title;
   return next;
 }
 

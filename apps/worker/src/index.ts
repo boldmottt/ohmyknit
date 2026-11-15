@@ -3,7 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 import { checkin, convertPattern, type ConvertedPattern, type ProgressEvent } from '@knitcloset/gauge-engine';
 import { parsePattern, SAMPLE_BEANIE, SAMPLE_PATTERN } from '@knitcloset/pattern-schema';
 import { Db, json, now, uid } from './db.js';
-import { learnFromFinished, suggestGauge, type CoefficientRow, type SwatchRow } from './hands.js';
+import { learnFromFinished, LENGTH_KEY, suggestGauge, WIDTH_KEY, type CoefficientRow, type SwatchRow } from './hands.js';
 import {
   createProject,
   ingestEvents,
@@ -59,6 +59,12 @@ const num = (v: unknown, name: string): number => {
 };
 
 api.get('/health', (c) => c.json({ ok: true, time: now() }));
+
+/**
+ * 로그인(Cloudflare Access)이 만료되면 API 호출이 모두 실패해서 앱은 "오프라인"처럼 보여요.
+ * 이 주소로 화면을 통째로 이동하면 Access가 로그인 화면을 띄우고, 끝나면 앱으로 돌아옵니다.
+ */
+api.get('/relogin', (c) => c.redirect('/'));
 
 /* ───────────── 프로필 (네임태그) ───────────── */
 
@@ -424,14 +430,34 @@ api.post('/projects/:id/finish', async (c) => {
   const p = await db.first<ProjectRow>('SELECT * FROM projects WHERE id = ?', c.req.param('id'));
   if (!p) throw new NotFound('프로젝트를 찾을 수 없어요');
   const { pattern } = await loadPattern(db, p.pattern_id);
-  const expected = pattern.sizes.find((s) => s.label === p.size_label)?.finished ?? {};
+  const design = pattern.sizes.find((s) => s.label === p.size_label)?.finished ?? {};
+  const converted = json<ConvertedPattern | null>(p.converted_json, null);
+  // 예상 치수는 "도안 설계 치수"가 아니라 "실제로 뜬 콧수·단수로 나와야 하는 치수"여야 해요.
+  // (반복 단위에 맞춘 콧수, 변환하지 않은 배색 구간 때문에 설계 치수와 조금 달라요)
+  const expected = Object.fromEntries(
+    Object.entries(design).map(([key, cm]) => {
+      const pc = (/소매/.test(key) ? converted?.pieces.find((x) => /소매/.test(x.name)) : undefined) ?? converted?.pieces[0];
+      if (!pc) return [key, cm];
+      const g = pc.gauge ?? { st: p.my_gauge_st, row: p.my_gauge_row };
+      let f = 1;
+      if (WIDTH_KEY.test(key) && pc.castOn.designWidthCm > 0) f = pc.castOn.expectedWidthCm / pc.castOn.designWidthCm;
+      else if (LENGTH_KEY.test(key)) {
+        const designRows = pc.sections.reduce((a, x) => a + x.originalRows, 0);
+        if (designRows > 0) f = (pc.totalRows / g.row) / (designRows / pattern.gauge.row);
+      }
+      return [key, Math.round(cm * f * 10) / 10];
+    }),
+  );
   const measured = Object.fromEntries(
     Object.entries(b.measured ?? {}).filter(([, v]) => typeof v === 'number' && v > 0),
   );
+  const already = await db.first<{ project_id: string }>('SELECT project_id FROM finished_records WHERE project_id = ?', p.id);
   const basis = json<{ swatchSt?: number; swatchRow?: number; swatchId?: string }>(p.gauge_basis, {});
   let swatch: SwatchRow | null = null;
   if (basis.swatchId) swatch = await db.first<SwatchRow>('SELECT * FROM swatches WHERE id = ?', basis.swatchId);
-  const learned = Object.keys(measured).length
+  // 학습하지 않는 경우: 실측이 없음 / 이미 한 번 반영함 (복원 후 다시 완성) / 바늘 교체 방식(쓴 게이지를 알 수 없음)
+  const canLearn = Object.keys(measured).length > 0 && !already && p.conversion_mode !== 'needle';
+  const learned = canLearn
     ? await learnFromFinished(db, {
         profileId: p.profile_id,
         technique: pattern.gauge.technique ?? 'stockinette',
@@ -464,13 +490,11 @@ api.post('/projects/:id/finish', async (c) => {
 
 api.post('/projects/:id/reconvert', async (c) => {
   const b = await body<{ myGauge: { st: number; row: number }; mode?: 'recalc' | 'needle' }>(c);
-  await reconvertProject(
-    c.var.db,
-    c.req.param('id'),
-    { st: num(b.myGauge?.st, '내 코 게이지'), row: num(b.myGauge?.row, '내 단 게이지') },
-    b.mode,
-  );
-  return c.json({ ok: true });
+  const st = num(b.myGauge?.st, '내 코 게이지');
+  const row = num(b.myGauge?.row, '내 단 게이지');
+  if (st <= 0 || row <= 0) throw new Error('게이지는 0보다 커야 해요');
+  const r = await reconvertProject(c.var.db, c.req.param('id'), { st, row }, b.mode);
+  return c.json({ ok: true, ...r });
 });
 
 api.post('/projects/:id/yarn', async (c) => {

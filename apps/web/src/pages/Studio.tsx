@@ -11,6 +11,7 @@ import {
   designFromPattern,
   designToPattern,
   floodFill,
+  isStandalone,
   gridW,
   removeYarnFromGrid,
   resizeGrid,
@@ -19,7 +20,7 @@ import {
 } from '../studio/design';
 import { Preview, type PreviewHandle } from '../studio/Preview';
 import { swatchUrl, YarnLibrary } from '../studio/YarnLibrary';
-import { fmtDate, getStoredProfile, Modal, useToast } from '../ui';
+import { fmtDate, getStoredProfile, Modal, NumInput, useToast } from '../ui';
 import '../studio/studio.css';
 
 const ZOOMS = [0.5, 0.75, 1, 1.5, 2];
@@ -80,6 +81,36 @@ export default function Studio() {
     };
   }, [patternId]);
 
+  // 저장하지 않고 다른 화면으로 가도 작업이 사라지지 않게, 고치는 중인 디자인을 기기에 남겨 둠
+  const draftKey = `kc.studio.draft:${patternId ?? 'new'}:${ref ? `${ref.pieceIndex}.${ref.sectionIndex}` : '-'}`;
+  const restoreDraft = useCallback(
+    (base: Design) => {
+      try {
+        const raw = localStorage.getItem(draftKey);
+        if (!raw || raw === JSON.stringify(base)) return;
+        const draft = JSON.parse(raw) as Design;
+        if (!Array.isArray(draft.grid) || !Array.isArray(draft.yarns)) return;
+        setDesign(draft);
+        toast({
+          text: '저장하지 않았던 변경을 되살렸어요',
+          ms: 8000,
+          action: {
+            label: '버리기',
+            run: () => {
+              localStorage.removeItem(draftKey);
+              setDesign(base);
+              setPast([]);
+              setFuture([]);
+            },
+          },
+        });
+      } catch {
+        /* 초안을 못 읽으면 그냥 넘어감 */
+      }
+    },
+    [draftKey, toast],
+  );
+
   useEffect(() => {
     if (!pattern || !ref) return;
     const d = designFromPattern(pattern, ref);
@@ -88,10 +119,33 @@ export default function Studio() {
       setSaved(JSON.stringify(d));
       setPast([]);
       setFuture([]);
+      restoreDraft(d);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pattern, ref]);
 
+  // 새 디자인(/studio)으로 들어왔을 때
+  useEffect(() => {
+    if (patternId) return;
+    const d = blankDesign();
+    setDesign(d);
+    setSaved(JSON.stringify(d));
+    setPast([]);
+    setFuture([]);
+    restoreDraft(d);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [patternId]);
+
   const dirty = JSON.stringify(design) !== saved;
+  useEffect(() => {
+    try {
+      if (dirty) localStorage.setItem(draftKey, JSON.stringify(design));
+      else localStorage.removeItem(draftKey);
+    } catch {
+      /* 저장 공간이 없으면 초안 없이 동작 */
+    }
+  }, [design, dirty, draftKey]);
+  const standalone = !!pattern && isStandalone(pattern, sourceType);
   useEffect(() => {
     const h = (e: BeforeUnloadEvent) => {
       if (dirty) e.preventDefault();
@@ -205,7 +259,7 @@ export default function Studio() {
     setBusy(true);
     try {
       if (pattern && patternId && ref) {
-        const next = applyDesign(pattern, ref, design);
+        const next = applyDesign(pattern, ref, design, standalone);
         parsePattern(next);
         await api.updatePattern(patternId, next, fileKey ?? undefined);
         setPattern(next);
@@ -214,6 +268,11 @@ export default function Studio() {
         parsePattern(p);
         const { id } = await api.createPattern(p, { profileId: profileId ?? undefined, sourceType: 'design' });
         nav(`/studio/${id}?piece=0&section=0`, { replace: true });
+      }
+      try {
+        localStorage.removeItem(draftKey);
+      } catch {
+        /* 무시 */
       }
       setSaved(JSON.stringify(design));
       setSavedAt(Date.now());
@@ -237,6 +296,12 @@ export default function Studio() {
 
   function newDesign() {
     if (dirty && !window.confirm('저장하지 않은 변경이 있어요. 새로 시작할까요?')) return;
+    try {
+      localStorage.removeItem(draftKey);
+      localStorage.removeItem('kc.studio.draft:new:-');
+    } catch {
+      /* 무시 */
+    }
     const d = blankDesign();
     setDesign(d);
     setSaved(JSON.stringify(d));
@@ -266,6 +331,11 @@ export default function Studio() {
           <h3>디자인</h3>
           <label className="field"><span>이름</span><input value={design.name} onChange={(e) => commit({ ...design, name: e.target.value })} /></label>
           <label className="field"><span>설명 (작업 화면 지시로 쓰여요)</span><textarea rows={2} value={design.description} onChange={(e) => commit({ ...design, description: e.target.value })} /></label>
+          {pattern && !ref && (
+            <p className="small badge warn" style={{ display: 'block', padding: 8 }}>
+              "{pattern.title}" 도안에는 차트 구간이 없어요. 지금 저장하면 새 디자인으로 따로 저장돼요.
+            </p>
+          )}
           {pattern && ref && (
             <div className="small muted">
               {chartSections(pattern).length > 1 ? (
@@ -295,18 +365,18 @@ export default function Studio() {
         <section className="sp">
           <h3>격자</h3>
           <div className="sp-grid">
-            <input inputMode="numeric" aria-label="코 수" value={w} onChange={(e) => setGrid(resizeGrid(design.grid, Number(e.target.value) || 1, h, color))} />
+            <NumInput integer min={1} max={80} live={false} aria-label="코 수" value={w} onCommit={(n) => setGrid(resizeGrid(design.grid, n, h, color))} />
             <span>코 ×</span>
-            <input type="number" min={1} max={40} aria-label="가로 반복" value={design.repeatsX} onChange={(e) => commit({ ...design, repeatsX: Math.max(1, Math.min(40, Number(e.target.value) || 1)) })} />
+            <NumInput integer min={1} max={40} aria-label="가로 반복" value={design.repeatsX} onCommit={(n) => commit({ ...design, repeatsX: n })} />
             <span>반복</span>
-            <input inputMode="numeric" aria-label="단 수" value={h} onChange={(e) => setGrid(resizeGrid(design.grid, w, Number(e.target.value) || 1, color))} />
+            <NumInput integer min={1} max={120} live={false} aria-label="단 수" value={h} onCommit={(n) => setGrid(resizeGrid(design.grid, w, n, color))} />
             <span>단 ×</span>
-            <input type="number" min={1} max={20} aria-label="세로 반복" value={design.repeatsY} onChange={(e) => commit({ ...design, repeatsY: Math.max(1, Math.min(20, Number(e.target.value) || 1)) })} />
+            <NumInput integer min={1} max={20} aria-label="세로 반복" value={design.repeatsY} onCommit={(n) => commit({ ...design, repeatsY: n })} />
             <span>반복</span>
           </div>
           <label className="field">
             <span>뜨는 방향</span>
-            <select value={design.direction} onChange={(e) => commit({ ...design, direction: e.target.value as Design['direction'] })}>
+            <select disabled={!!pattern && !standalone} value={design.direction} onChange={(e) => commit({ ...design, direction: e.target.value as Design['direction'] })}>
               <option value="bottom_up">↑ 아래에서 위로</option>
               <option value="top_down">↓ 위에서 아래로</option>
             </select>
@@ -322,10 +392,15 @@ export default function Studio() {
 
         <section className="sp">
           <h3>게이지 <span className="muted small">(10cm)</span></h3>
+          {pattern && !standalone && (
+            <p className="small muted" style={{ margin: 0 }}>
+              이 차트는 "{pattern.title}" 도안의 한 구간이에요. 여기서 바꾼 게이지는 <b>미리보기에만</b> 쓰이고, 도안의 게이지·코잡기·방향은 도안 편집기에서 바꿔요.
+            </p>
+          )}
           <div className="sp-grid two">
-            <input inputMode="decimal" aria-label="코 게이지" value={design.gauge.st} onChange={(e) => commit({ ...design, gauge: { ...design.gauge, st: Number(e.target.value) || 1 } })} />
+            <NumInput min={1} max={80} aria-label="코 게이지" value={design.gauge.st} onCommit={(n) => commit({ ...design, gauge: { ...design.gauge, st: n } })} />
             <span>코 :</span>
-            <input inputMode="decimal" aria-label="단 게이지" value={design.gauge.row} onChange={(e) => commit({ ...design, gauge: { ...design.gauge, row: Number(e.target.value) || 1 } })} />
+            <NumInput min={1} max={120} aria-label="단 게이지" value={design.gauge.row} onCommit={(n) => commit({ ...design, gauge: { ...design.gauge, row: n } })} />
             <span>단</span>
           </div>
         </section>

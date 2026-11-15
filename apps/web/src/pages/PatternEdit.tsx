@@ -5,7 +5,7 @@ import { convertPattern } from '@knitcloset/gauge-engine';
 import { parsePattern, TECHNIQUE_LABEL, type Technique } from '@knitcloset/pattern-schema';
 import { api, fileUrl } from '../api';
 import { blankPattern, DRAFT_KEY } from './Patterns';
-import { getStoredProfile, useToast } from '../ui';
+import { getStoredProfile, NumInput, useToast } from '../ui';
 
 /* 편집 중인 도안은 느슨한 형태(입력 중 빈 값 허용)로 다루고 저장할 때 검증합니다 */
 type SV = number | Record<string, number>;
@@ -217,7 +217,12 @@ export default function PatternEdit() {
                     <div key={i} className="row" style={{ gap: 4 }}>
                       <input type="color" value={c.hex} onChange={(e) => upd((p) => void (p.palette[i]!.hex = e.target.value.toUpperCase()))} aria-label={`${i}번 색`} />
                       <input className="input" style={{ width: 110 }} value={c.name} onChange={(e) => upd((p) => void (p.palette[i]!.name = e.target.value))} aria-label={`${i}번 색 이름`} />
-                      {i > 0 && <button className="btn ghost small" onClick={() => upd((p) => void p.palette.splice(i, 1))} aria-label="색 지우기">✕</button>}
+                      {i > 0 && <button className="btn ghost small" onClick={() => upd((p) => {
+                        p.palette.splice(i, 1);
+                        for (const pc of p.pieces) for (const sec of pc.sections) {
+                          if (sec.chart) sec.chart.grid = sec.chart.grid.map((row) => row.map((v) => (v === i ? 0 : v > i ? v - 1 : v)));
+                        }
+                      })} aria-label="색 지우기">✕</button>}
                     </div>
                   ))}
                   <button className="btn small" onClick={() => upd((p) => void p.palette.push({ name: `색${p.palette.length}`, hex: '#E8A6A8' }))}>+ 색</button>
@@ -233,7 +238,7 @@ export default function PatternEdit() {
                     {Object.entries(s.finished).map(([k, v]) => (
                       <span key={k} className="row" style={{ gap: 4 }}>
                         <span className="small">{k}</span>
-                        <input className="input" style={{ width: 80 }} inputMode="decimal" value={v} onChange={(e) => upd((p) => void (p.sizes[i]!.finished[k] = Number(e.target.value)))} aria-label={`${s.label} ${k}`} />
+                        <NumInput className="input" style={{ width: 80 }} value={v} min={0} onCommit={(n) => upd((p) => void (p.sizes[i]!.finished[k] = n))} aria-label={`${s.label} ${k}`} />
                       </span>
                     ))}
                     <button className="btn ghost small" onClick={() => {
@@ -295,7 +300,7 @@ function Num({ label, value, onChange }: { label: string; value: number; onChang
   return (
     <label className="field">
       <span>{label}</span>
-      <input inputMode="decimal" value={Number.isFinite(value) ? value : ''} onChange={(e) => onChange(Number(e.target.value))} />
+      <NumInput value={value || undefined} min={0} onCommit={onChange} />
     </label>
   );
 }
@@ -320,11 +325,11 @@ function SizeInput({ label, value, sizes, onChange }: { label: string; value: SV
       {per ? (
         <div className="row" style={{ gap: 4 }}>
           {sizes.map((s) => (
-            <input key={s} className="input" style={{ width: 72 }} inputMode="numeric" aria-label={`${label} ${s}`} placeholder={s} value={(value as Record<string, number>)[s] ?? ''} onChange={(e) => onChange({ ...(value as Record<string, number>), [s]: Number(e.target.value) })} />
+            <NumInput key={s} className="input" style={{ width: 72 }} integer min={0} aria-label={`${label} ${s}`} placeholder={s} value={(value as Record<string, number>)[s]} onCommit={(n) => onChange({ ...(value as Record<string, number>), [s]: n })} />
           ))}
         </div>
       ) : (
-        <input className="input" inputMode="numeric" value={value ?? ''} onChange={(e) => onChange(Number(e.target.value))} />
+        <NumInput className="input" integer min={0} value={value as number | undefined} onCommit={onChange} />
       )}
     </div>
   );
@@ -463,7 +468,7 @@ function SectionEditor({ index, section: s, sizes, palette, onChange, onRemove, 
             </label>
             <label className="field">
               <span>구간 안 몇 단째 (0 = 마지막 단)</span>
-              <input inputMode="numeric" value={ev.atRow === 'end' ? 0 : ev.atRow} onChange={(e) => set((x) => void (x.events[i]!.atRow = Number(e.target.value) > 0 ? Number(e.target.value) : 'end'))} />
+              <NumInput integer min={0} value={ev.atRow === 'end' ? 0 : ev.atRow} onCommit={(n) => set((x) => void (x.events[i]!.atRow = n > 0 ? n : 'end'))} />
             </label>
             <SizeInput label="콧수 (없으면 0)" value={ev.stitches ?? 0} sizes={sizes} onChange={(v) => set((x) => void (x.events[i]!.stitches = v))} />
             <Field label="설명" value={ev.text} onChange={(v) => set((x) => void (x.events[i]!.text = v))} />
@@ -507,9 +512,9 @@ function ChartEditor({ chart, palette, onChange, onRemove }: { chart: { grid: nu
         ))}
       </div>
       <div className="row" style={{ marginTop: 6 }}>
-        <label className="row small">너비 <input className="input" style={{ width: 70 }} inputMode="numeric" value={w} onChange={(e) => resize(Number(e.target.value), h)} /></label>
-        <label className="row small">높이 <input className="input" style={{ width: 70 }} inputMode="numeric" value={h} onChange={(e) => resize(w, Number(e.target.value))} /></label>
-        <label className="row small">반복 너비 <input className="input" style={{ width: 70 }} inputMode="numeric" value={chart.repeatW ?? w} onChange={(e) => onChange({ ...chart, repeatW: Number(e.target.value) || undefined })} /></label>
+        <label className="row small">너비 <NumInput className="input" style={{ width: 70 }} integer min={1} max={60} live={false} value={w} onCommit={(n) => resize(n, h)} /></label>
+        <label className="row small">높이 <NumInput className="input" style={{ width: 70 }} integer min={1} max={80} live={false} value={h} onCommit={(n) => resize(w, n)} /></label>
+        <label className="row small">반복 너비 <NumInput className="input" style={{ width: 70 }} integer min={1} max={w} value={chart.repeatW ?? w} onCommit={(n) => onChange({ ...chart, repeatW: n })} /></label>
         <button className="btn ghost small" onClick={onRemove}>차트 없애기</button>
       </div>
       <div

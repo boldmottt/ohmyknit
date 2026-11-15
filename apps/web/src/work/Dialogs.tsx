@@ -9,7 +9,7 @@ export function CheckinDialog(p: {
   expectedWidth: number;
   round: boolean;
   onClose: () => void;
-  onDone: (msg: string, warn: boolean) => void;
+  onDone: (msg: string, warn: boolean, measuredCm: number, dimension: 'length' | 'width') => void;
 }) {
   const [dim, setDim] = useState<'length' | 'width'>('length');
   const [cm, setCm] = useState('');
@@ -26,7 +26,7 @@ export function CheckinDialog(p: {
           setBusy(true);
           try {
             const r = await api.checkin(p.pieceId, { atRow: p.atRow, measuredCm: v, expectedCm: expected, dimension: dim });
-            p.onDone(r.message, r.warn);
+            p.onDone(r.message, r.warn, v, dim);
           } catch (x) {
             setErr((x as Error).message);
           } finally {

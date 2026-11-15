@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { replayEvents, sessionStats, type ProgressEvent } from '../src/index.js';
+import { idleLimitMs, knittingPace, replayEvents, sessionStats, type ProgressEvent } from '../src/index.js';
 
 let n = 0;
 const ev = (type: ProgressEvent['type'], at: number, extra: Partial<ProgressEvent> = {}): ProgressEvent => ({
@@ -66,5 +66,56 @@ describe('sessionStats', () => {
     ]);
     expect(s.activeMs).toBe(8 * min);
     expect(s.rowsKnitted).toBe(5);
+  });
+});
+
+describe('knittingPace: 속도 계산', () => {
+  const min = 60_000;
+  const st228 = () => 228;
+
+  it('한 단에 12분 걸리는 228코 배색 단도 뜨는 시간으로 잡힘', () => {
+    expect(idleLimitMs(228)).toBeGreaterThan(12 * min);
+    const p = knittingPace([ev('row_inc', 0), ev('row_inc', 12 * min, { fromRow: 1 }), ev('row_inc', 24 * min, { fromRow: 2 })], st228);
+    expect(p.activeMs).toBe(24 * min);
+    expect(p.stitches).toBe(456);
+    expect(p.stitchesPerMinute).toBeCloseTo(19, 5);
+  });
+
+  it('몰아서 누른 +1은 속도를 부풀리지 않음', () => {
+    // 3단을 뜬 뒤 1초 간격으로 세 번 누름
+    const p = knittingPace(
+      [ev('row_inc', 0), ev('row_inc', 12 * min, { fromRow: 1 }), ev('row_inc', 12 * min + 1000, { fromRow: 2 }), ev('row_inc', 12 * min + 2000, { fromRow: 3 })],
+      st228,
+    );
+    expect(p.rowsCounted).toBe(1);
+    expect(p.stitchesPerMinute).toBeCloseTo(19, 5);
+  });
+
+  it('오래 쉰 뒤의 단은 빼고, 그 다음 단부터 다시 셈', () => {
+    const p = knittingPace(
+      [ev('row_inc', 0), ev('row_inc', 3 * 60 * min, { fromRow: 1 }), ev('row_inc', 3 * 60 * min + 10 * min, { fromRow: 2 })],
+      st228,
+    );
+    expect(p.rowsCounted).toBe(1);
+    expect(p.activeMs).toBe(10 * min);
+  });
+
+  it('이동·풀기 직후의 단은 빼고, 단 안의 코 추적은 시간에 포함', () => {
+    const p = knittingPace(
+      [
+        ev('row_inc', 0),
+        ev('jump', 1 * min, { toRow: 40 }),
+        ev('row_inc', 9 * min, { fromRow: 40 }), // 이동 직후 → 제외
+        ev('stitch', 13 * min, { fromRow: 41, toRow: 100 }),
+        ev('row_inc', 19 * min, { fromRow: 41 }), // 10분 (코 추적 포함)
+      ],
+      st228,
+    );
+    expect(p.rowsCounted).toBe(1);
+    expect(p.activeMs).toBe(10 * min);
+  });
+
+  it('자료가 1분 미만이면 속도는 null', () => {
+    expect(knittingPace([ev('row_inc', 0)], st228).stitchesPerMinute).toBeNull();
   });
 });

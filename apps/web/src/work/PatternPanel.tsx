@@ -3,7 +3,7 @@ import type { ConvertedPiece } from '@knitcloset/gauge-engine';
 import { COLOR_SYMBOLS, shade, type Palette } from '@knitcloset/knit-render';
 import { NO_STITCH, realCells, TECHNIQUE_LABEL } from '@knitcloset/pattern-schema';
 import { fileUrl, type Note, type WorkData } from '../api';
-import { colorRun, workingGauge, type RowView } from '../derive';
+import { colorRun, pieceGauge, type RowView } from '../derive';
 
 type Props = {
   data: WorkData;
@@ -168,7 +168,7 @@ function StepsTab({ piece, view, onPickRow }: Props) {
 }
 
 function SchematicTab({ data, piece, onPiece }: Props) {
-  const g = workingGauge(data);
+  const g = pieceGauge(data, piece);
   const lengthCm = (rows: number) => ((rows / g.row) * 10).toFixed(1);
   const maxSt = Math.max(...piece.rows.map((r) => r.stitchesWorked));
   const designLen = (rows: number) => ((rows / data.converted.patternGauge.row) * 10).toFixed(1);

@@ -165,3 +165,75 @@ export function relDay(ms: number | null | undefined, now = Date.now()): string 
 export function pct(r: number, digits = 0): string {
   return `${(r * 100).toFixed(digits)}%`;
 }
+
+/* ───── 숫자 입력 ───── */
+
+type NumInputProps = Omit<React.InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange' | 'min' | 'max'> & {
+  value: number | undefined;
+  /** 올바른 숫자가 됐을 때만 불림 */
+  onCommit: (n: number) => void;
+  min?: number;
+  max?: number;
+  integer?: boolean;
+  /**
+   * true(기본): 치는 동안에도 바로 반영 (게이지처럼 미리보기가 따라오면 좋은 값)
+   * false: 입력을 마쳤을 때(칸을 벗어나거나 Enter)만 반영 (격자 크기처럼 중간 값이 위험한 값)
+   */
+  live?: boolean;
+};
+
+/**
+ * 숫자 칸. 글자는 칸이 따로 기억해서 "22." 처럼 치는 중인 값이 지워지지 않고,
+ * 칸을 비워도 엉뚱한 숫자로 바뀌지 않아요. 벗어나면 마지막으로 유효했던 값으로 돌아옵니다.
+ */
+export function NumInput({ value, onCommit, min, max, integer, live = true, ...rest }: NumInputProps) {
+  const show = (v: number | undefined) => (v === undefined || !Number.isFinite(v) ? '' : String(v));
+  const [text, setText] = useState(show(value));
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setText(show(value));
+  }, [value]);
+  const parse = (t: string): number | null => {
+    if (t.trim() === '' || t.trim() === '-' || t.trim() === '.') return null;
+    let n = Number(t.replace(',', '.'));
+    if (!Number.isFinite(n)) return null;
+    if (integer) n = Math.round(n);
+    if (min !== undefined && n < min) return live ? null : min;
+    if (max !== undefined && n > max) return max;
+    return n;
+  };
+  const commit = (t: string) => {
+    const n = parse(t);
+    if (n !== null && n !== value) onCommit(n);
+    return n;
+  };
+  return (
+    <input
+      inputMode={integer ? 'numeric' : 'decimal'}
+      {...rest}
+      value={text}
+      onFocus={(e) => {
+        focused.current = true;
+        rest.onFocus?.(e);
+      }}
+      onChange={(e) => {
+        setText(e.target.value);
+        if (live) commit(e.target.value);
+      }}
+      onBlur={(e) => {
+        focused.current = false;
+        const n = live ? parse(text) : commit(text);
+        setText(show(n ?? value));
+        rest.onBlur?.(e);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && !live) {
+          e.preventDefault();
+          const n = commit(text);
+          setText(show(n ?? value));
+        }
+        rest.onKeyDown?.(e);
+      }}
+    />
+  );
+}

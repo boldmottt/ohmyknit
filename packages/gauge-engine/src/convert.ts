@@ -65,6 +65,8 @@ export type ConvertedPiece = {
     /** 변환 콧수로 내 손으로 뜬 예상 너비 */
     expectedWidthCm: number;
   };
+  /** 이 조각을 변환할 때 쓴 게이지. 뜨는 중에 프로젝트 게이지를 바꿔도 시작한 조각은 이 값을 유지 */
+  gauge?: Gauge;
   sections: ConvertedSection[];
   rows: ConvertedRow[];
   totalRows: number;
@@ -331,6 +333,7 @@ export function convertPattern(pattern: Pattern, options: ConvertOptions): Conve
         asIsWidthCm: cm(originalCastOn, options.myGauge.st),
         expectedWidthCm: cm(castOnConv.value, workingGauge.st),
       },
+      gauge: { st: workingGauge.st, row: workingGauge.row },
       sections,
       rows,
       totalRows: rows.length,

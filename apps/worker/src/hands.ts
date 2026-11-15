@@ -107,8 +107,8 @@ export async function suggestGauge(
   };
 }
 
-const WIDTH_KEY = /둘레|너비|폭|width|chest|bust/i;
-const LENGTH_KEY = /장|길이|length/i;
+export const WIDTH_KEY = /둘레|너비|폭|width|chest|bust/i;
+export const LENGTH_KEY = /장|길이|length/i;
 
 /**
  * 완성 실측으로 큰 작품 보정 계수를 갱신합니다. (기획서 4.4)

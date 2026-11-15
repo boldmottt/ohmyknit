@@ -45,7 +45,7 @@ packages/
   gauge-engine/     게이지 변환, 늘림·줄임 재분배, 도안 → 단별 표, 진행 이벤트 재생, 보정 계수
   pattern-schema/   도안 JSON 스키마 (Zod) + 샘플 도안
   knit-render/      니트 렌더러 (옷장·작업 화면·스튜디오 공용, 평면·원형, 얼룩실 질감)
-scripts/            백업·복원, launchd 자동 실행, Tunnel 설정 예시, E2E 확인
+scripts/            백업·복원, launchd 자동 실행, Tunnel 설정 예시, E2E 확인 (기본 흐름·스튜디오·옷장·기능 점검)
 docs/
   PLAN.md           통합 기획서
   SETUP.md          맥북 설치 가이드

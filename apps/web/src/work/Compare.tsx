@@ -78,7 +78,7 @@ export function Compare({ data, snapshots, activePieceId, onPick }: Props) {
         <b>전체 {pct(all.ratio)} 완성</b>
         {activeConv && activeSnap && (
           <div className="num">
-            {activeConv.name} 현재 길이 {expectedLengthCm(data, activeSnap.currentRow)}cm / 목표 {expectedLengthCm(data, activeConv.totalRows)}cm
+            {activeConv.name} 현재 길이 {expectedLengthCm(data, activeSnap.currentRow, activeConv)}cm / 목표 {expectedLengthCm(data, activeConv.totalRows, activeConv)}cm
           </div>
         )}
         <div className="num muted">

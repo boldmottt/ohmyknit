@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { recommendNeedle } from '@knitcloset/gauge-engine';
@@ -264,12 +264,18 @@ function StepGauge(p: {
   });
   const hands = useQuery({ queryKey: ['hands', p.profileId], queryFn: () => api.hands(p.profileId) });
   const { setGauge, setBasis, gauge } = p;
+  // 추천값은 추천이 새로 왔을 때 한 번만 채움. 사용자가 칸을 지우거나 고치는 중에는 덮어쓰지 않음
+  const filledFrom = useRef<GaugeSuggestion | null>(null);
   useEffect(() => {
-    if (suggestion.data && !gauge.st) {
-      setGauge({ st: String(suggestion.data.st), row: String(suggestion.data.row) });
-      setBasis(suggestion.data);
+    const sug = suggestion.data;
+    if (!sug || filledFrom.current === sug) return;
+    const untouched = !gauge.st || (filledFrom.current && gauge.st === String(filledFrom.current.st) && gauge.row === String(filledFrom.current.row));
+    filledFrom.current = sug;
+    if (untouched) {
+      setGauge({ st: String(sug.st), row: String(sug.row) });
+      setBasis(sug);
     }
-  }, [suggestion.data, gauge.st, setGauge, setBasis]);
+  }, [suggestion.data, gauge.st, gauge.row, setGauge, setBasis]);
 
   const st = Number(p.gauge.st);
   const row = Number(p.gauge.row);

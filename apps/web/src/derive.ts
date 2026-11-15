@@ -153,12 +153,64 @@ export function colorRun(line: number[], palette: { name: string; hex: string }[
     .join(' + ');
 }
 
-export function expectedLengthCm(data: WorkData, completedRows: number): number {
-  return Math.round((completedRows / workingGauge(data).row) * 100) / 10;
+/** 그 조각을 변환할 때 쓴 게이지 (게이지를 바꾼 뒤에도 시작한 조각은 예전 값을 유지) */
+export function pieceGauge(data: WorkData, piece?: ConvertedPiece) {
+  return piece?.gauge ?? workingGauge(data);
 }
 
-export function expectedWidthCm(data: WorkData, stitches: number): number {
-  return Math.round((stitches / workingGauge(data).st) * 100) / 10;
+export function expectedLengthCm(data: WorkData, completedRows: number, piece?: ConvertedPiece): number {
+  return Math.round((completedRows / pieceGauge(data, piece).row) * 100) / 10;
+}
+
+export function expectedWidthCm(data: WorkData, stitches: number, piece?: ConvertedPiece): number {
+  return Math.round((stitches / pieceGauge(data, piece).st) * 100) / 10;
+}
+
+export type CheckinAdvice = {
+  /** 사람이 읽는 조언. 조정이 필요 없으면 빈 문자열 */
+  text: string;
+  /** 이 실측대로라면 내 실제 게이지 (다음 조각 변환에 쓸 값) */
+  suggested: { st?: number; row?: number };
+};
+
+/**
+ * 중간 실측 결과를 "그래서 무엇을 하면 되는지"로 바꿉니다 (F4-8).
+ * 길이: 지금 떠지는 비율로 목표 길이까지 몇 단이 필요한지.
+ * 너비: 이미 뜬 콧수는 바꿀 수 없으니 완성 치수가 얼마나 달라질지.
+ */
+export function checkinAdvice(
+  data: WorkData,
+  piece: ConvertedPiece,
+  o: { dimension: 'length' | 'width'; measuredCm: number; completedRows: number; stitches: number },
+): CheckinAdvice {
+  const g = pieceGauge(data, piece);
+  if (!(o.measuredCm > 0)) return { text: '', suggested: {} };
+  const r1 = (n: number) => Math.round(n * 10) / 10;
+  if (o.dimension === 'length') {
+    if (o.completedRows < 10) return { text: '아직 뜬 단이 적어서 길이 조언은 10단 넘게 뜬 뒤에 드릴게요.', suggested: {} };
+    const actualRow = (o.completedRows / o.measuredCm) * 10;
+    const targetCm = (piece.totalRows / g.row) * 10;
+    const planned = piece.totalRows - o.completedRows;
+    const needed = Math.max(0, Math.round(((targetCm - o.measuredCm) / o.measuredCm) * o.completedRows));
+    const diff = needed - planned;
+    const short = r1(targetCm - o.measuredCm);
+    const text =
+      planned === 0
+        ? Math.abs(short) < 1
+          ? `다 뜬 길이가 목표 ${r1(targetCm)}cm에 거의 맞아요.`
+          : `이 조각은 계획한 단을 다 떴는데 목표 ${r1(targetCm)}cm보다 ${Math.abs(short)}cm ${short > 0 ? '짧아요' : '길어요'}.${short > 0 ? ` 코막음 전이라면 약 ${needed}단을 더 뜨면 맞아요.` : ''} 블로킹으로 1~2cm는 조절할 수 있어요.`
+        : Math.abs(diff) < 2
+        ? `지금처럼 뜨면 목표 길이 ${r1(targetCm)}cm에 거의 맞아요.`
+        : `지금처럼 뜨면 목표 길이 ${r1(targetCm)}cm까지 ${needed}단이 필요해요. 계획은 ${planned}단이라 약 ${Math.abs(diff)}단을 ${diff > 0 ? '더' : '덜'} 뜨면 돼요. (무늬 구간이 아닌 곳에서 조절하세요)`;
+    return { text, suggested: { row: r1(actualRow) } };
+  }
+  const actualSt = (o.stitches / o.measuredCm) * 10;
+  const pctOff = ((o.measuredCm - (o.stitches / g.st) * 10) / ((o.stitches / g.st) * 10)) * 100;
+  const text =
+    Math.abs(pctOff) < 3
+      ? ''
+      : `이미 잡은 콧수는 바꿀 수 없어서, 이 조각은 완성 치수가 약 ${Math.abs(r1(pctOff))}% ${pctOff < 0 ? '작게' : '크게'} 나와요. 아직 시작하지 않은 조각은 게이지를 다시 맞추면 그 차이를 반영할 수 있어요.`;
+  return { text, suggested: { st: r1(actualSt) } };
 }
 
 export function remainingMinutes(data: WorkData, remainingStitches: number): number | null {

@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { EMPTY_SNAPSHOT } from '@knitcloset/gauge-engine';
 import { api } from '../api';
 import {
+  checkinAdvice,
   convertedPiece,
   currentRowView,
   expectedLengthCm,
@@ -16,7 +17,7 @@ import {
 } from '../derive';
 import { cacheWork, cachedWork, flushAll } from '../offline';
 import { pct, readPrefs, reducedMotion, savePrefs, tick, useToast } from '../ui';
-import { liveActiveMs, useWork } from '../workStore';
+import { liveActiveMs, timerRunning, useWork } from '../workStore';
 import { Compare } from '../work/Compare';
 import { CheckinDialog, FinishDialog, FrogDialog, LockDialog, NoteDialog, ShortcutsDialog, YarnDialog } from '../work/Dialogs';
 import { Dock } from '../work/Dock';
@@ -69,6 +70,44 @@ export default function Work() {
       void useWork.getState().flush();
     };
   }, [reload]);
+
+  // 다시 연결되거나 앱으로 돌아오면: 쌓인 기록을 보내고, 다른 기기에서 뜬 내용을 받아 옴
+  useEffect(() => {
+    let busy = false;
+    const refresh = async () => {
+      if (busy || document.visibilityState !== 'visible') return;
+      busy = true;
+      try {
+        await useWork.getState().flush();
+        // 아직 못 보낸 기록이 있으면(오프라인) 화면은 그대로 둠
+        if (useWork.getState().pending === 0) await reload();
+      } finally {
+        busy = false;
+      }
+    };
+    window.addEventListener('online', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('online', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [reload]);
+
+  /** 저장 상태를 눌렀을 때: 다시 보내 보고, 인터넷은 되는데도 안 되면 로그인이 만료된 것 */
+  const retrySync = useCallback(async () => {
+    await useWork.getState().flush();
+    const st = useWork.getState();
+    if (st.sync === 'saved') {
+      toast({ text: '모두 저장됐어요' });
+      void reload();
+      return;
+    }
+    if (navigator.onLine && window.confirm('서버에 닿지 않아요. 로그인이 만료됐을 수 있어요.\n다시 로그인할까요? (누른 기록은 이 기기에 그대로 남아 있어요)')) {
+      window.location.href = '/api/relogin';
+    } else {
+      toast({ text: `아직 연결되지 않았어요. 기록 ${st.pending}개는 이 기기에 안전하게 있어요.` });
+    }
+  }, [reload, toast]);
 
   useEffect(() => {
     if (data && startOverall.current === null) startOverall.current = overall(data, snapshots).ratio;
@@ -217,11 +256,11 @@ export default function Work() {
   const remainMin = remainingMinutes(data, all.total - all.done);
   const yarn = yarnForecast(data, all.done, all.total);
   const activeMs = liveActiveMs(session, now);
+  const running = timerRunning(session, now);
   const syncLabel =
     sync === 'syncing' ? '⟳ 동기화 중' : sync === 'offline' || fromCache ? `⚡ 오프라인${pending ? ` (${pending}개 대기)` : ''}` : sync === 'error' ? '⚠ 저장 오류' : '☁ 저장됨';
 
-  if (ui.focus) {
-    return (
+  const focusView = (
       <FocusMode
         piece={conv}
         view={view}
@@ -232,14 +271,16 @@ export default function Work() {
         onDec={dec}
         onExit={() => w.setUi({ focus: false })}
       />
-    );
-  }
+  );
 
   const lockTexts = view.row?.events.filter((e) => e.lock).map((e) => e.text) ?? [];
   const nextPiece = data.pieces.find((p) => p.id !== activePieceId && (snapshots[p.id]?.currentRow ?? 0) < p.totalRows);
 
   return (
-    <div className={`work${leaving ? ' leaving' : ''}`}>
+    <>
+    {/* 집중 모드에서도 잠금 확인·조각 완성 같은 창은 떠야 해서, 본 화면은 숨기기만 하고 창은 밖에 둠 */}
+    {ui.focus && focusView}
+    <div className={`work${leaving ? ' leaving' : ''}`} hidden={ui.focus}>
       <header className="work-top">
         <button className="btn ghost" onClick={exit}>← 옷장으로</button>
         <h1 className="serif" title={data.project.patternTitle}>{data.project.name}</h1>
@@ -258,10 +299,21 @@ export default function Work() {
             );
           })}
         </nav>
-        <button className="btn ghost num timer" onClick={() => w.togglePause()} aria-label={session.paused ? '타이머 시작' : '타이머 일시정지'}>
-          ⏱ {formatDuration(activeMs)} {session.paused ? '▶' : '⏸'}
+        <button
+          className="btn ghost num timer"
+          onClick={() => w.togglePause()}
+          aria-label={running ? '타이머 일시정지' : '타이머 시작'}
+          title={running ? '뜨는 중' : session.paused ? '멈춤' : '오래 조작이 없어서 멈췄어요. +1을 누르면 다시 흘러요'}
+        >
+          ⏱ {formatDuration(activeMs)} {running ? '⏸' : '▶'}
         </button>
-        <span className={`sync ${sync}`} title={fromCache ? '저장된 데이터로 열었어요' : ''}>{syncLabel}</span>
+        {sync === 'saved' && !fromCache ? (
+          <span className={`sync ${sync}`}>{syncLabel}</span>
+        ) : (
+          <button className={`sync ${sync} linkish`} onClick={() => void retrySync()} title="눌러서 다시 보내기">
+            {syncLabel}
+          </button>
+        )}
         <div className="menu-wrap">
           <button className="btn ghost" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}>⋯</button>
           {menu && (
@@ -282,7 +334,7 @@ export default function Work() {
               </button>
               <button role="menuitem" onClick={() => setDialog('shortcuts')}>⌨ 단축키 안내</button>
               <button role="menuitem" onClick={() => nav(`/project/${data.project.id}/edit`)}>✏ 내용 수정하기</button>
-              <button role="menuitem" onClick={() => setDialog('finish')}>🎉 완성 처리</button>
+              <button role="menuitem" onClick={() => { void w.flush(); setDialog('finish'); }}>🎉 완성 처리</button>
             </div>
           )}
         </div>
@@ -338,7 +390,12 @@ export default function Work() {
           stitchTracking={stitchTracking}
           currentStitch={snap.currentStitch}
           onStitchStep={(d) => w.setStitch(Math.max(0, Math.min(view.row?.stitchesWorked ?? 0, snap.currentStitch + d)))}
-          onTool={(t) => (t === 'stitch' ? setStitchTracking(!stitchTracking) : setDialog(t))}
+          onTool={(t) => {
+            if (t === 'stitch') return setStitchTracking(!stitchTracking);
+            // 실 무게는 "지금까지 뜬 코 수"와 짝지어 저장되므로 먼저 서버에 진행을 보냄
+            if (t === 'yarn') void w.flush();
+            setDialog(t);
+          }}
         />
       </main>
 
@@ -356,17 +413,29 @@ export default function Work() {
         {snap.frogCount > 0 && <span className="muted small num">풀기 {snap.frogCount}회 · {snap.frogRows}단</span>}
       </footer>
 
+    </div>
       {dialog === 'checkin' && (
         <CheckinDialog
           pieceId={activePieceId}
           atRow={snap.currentRow}
-          expectedLength={expectedLengthCm(data, snap.currentRow)}
-          expectedWidth={expectedWidthCm(data, view.row?.stitchesWorked ?? conv.rows.at(-1)!.stitchCount)}
+          expectedLength={expectedLengthCm(data, snap.currentRow, conv)}
+          expectedWidth={expectedWidthCm(data, view.row?.stitchesWorked ?? conv.rows.at(-1)!.stitchCount, conv)}
           round={conv.construction === 'round'}
           onClose={() => setDialog(null)}
-          onDone={(msg) => {
+          onDone={(msg, warn, measuredCm, dimension) => {
             setDialog(null);
-            toast({ text: msg, ms: 6000 });
+            const advice = checkinAdvice(data, conv, {
+              dimension,
+              measuredCm,
+              completedRows: snap.currentRow,
+              stitches: view.row?.stitchesWorked ?? conv.rows.at(-1)!.stitchCount,
+            });
+            const q = new URLSearchParams(Object.entries(advice.suggested).map(([k, v]) => [k, String(v)]));
+            toast({
+              text: [msg.replace(' 남은 부분의 단수를 조정할까요?', ''), advice.text].filter(Boolean).join(' '),
+              ms: 14000,
+              ...(warn && q.size ? { action: { label: '게이지 다시 맞추기', run: () => nav(`/project/${data.project.id}/edit?${q}`) } } : {}),
+            });
             void reload();
           }}
         />
@@ -434,7 +503,7 @@ export default function Work() {
                   다음: {nextPiece.name} 뜨기
                 </button>
               ) : (
-                <button className="btn primary" onClick={() => setDialog('finish')}>완성 실측 입력하기</button>
+                <button className="btn primary" onClick={() => { void w.flush(); setDialog('finish'); }}>완성 실측 입력하기</button>
               )}
               <button className="btn" onClick={() => setDialog(null)}>닫기</button>
             </div>
@@ -454,6 +523,6 @@ export default function Work() {
         />
       )}
       {dialog === 'shortcuts' && <ShortcutsDialog onClose={() => setDialog(null)} />}
-    </div>
+    </>
   );
 }

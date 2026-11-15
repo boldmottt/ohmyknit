@@ -96,14 +96,29 @@ export function KnitCanvas({ piece, palette, completedRows, currentStitch, hover
     if (x > 0) w.scrollLeft = x;
   }, [completedRows, layout, piece, scrubRow]);
 
-  // 드래그로 진행 위치 정하기: 마우스는 바로, 터치는 길게 눌러서 (스크롤과 구분)
   const press = useRef<{ id: number; y: number; timer?: ReturnType<typeof setTimeout>; active: boolean } | null>(null);
+  // 길게 눌러 끌기 시작한 뒤에는 화면이 같이 스크롤되지 않게 막음.
+  // (touch-action은 손을 댄 순간에 정해져서 도중에 바꿀 수 없으므로 touchmove를 직접 막아야 해요)
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const block = (e: TouchEvent) => {
+      if (press.current?.active) e.preventDefault();
+    };
+    c.addEventListener('touchmove', block, { passive: false });
+    return () => c.removeEventListener('touchmove', block);
+  }, []);
+
+  // 드래그로 진행 위치 정하기: 마우스는 바로, 터치는 길게 눌러서 (스크롤과 구분)
 
   function rowFromEvent(e: React.PointerEvent): number {
     const rect = canvasRef.current!.getBoundingClientRect();
-    const r = rowAtY(piece, layout, e.clientY - rect.top);
+    const y = e.clientY - rect.top;
+    // 첫 단보다 바깥으로 끌면 0단 (아직 아무것도 안 뜸)
+    const beforeFirst = piece.direction === 'top_down' ? y < 0 : y > layout.height;
+    if (beforeFirst) return 0;
     // 손가락 위치의 단까지 "다 뜬" 것으로
-    return r;
+    return rowAtY(piece, layout, y);
   }
 
   function onPointerDown(e: React.PointerEvent) {
@@ -171,7 +186,7 @@ export function KnitCanvas({ piece, palette, completedRows, currentStitch, hover
           role="img"
         />
         {scrubRow !== null && (
-          <div className="scrub-bubble" style={{ top: rowTop(piece, layout, Math.max(1, scrubRow)) - 34 }}>
+          <div className="scrub-bubble" style={{ top: Math.max(0, rowTop(piece, layout, Math.max(1, scrubRow)) - 34) }}>
             {completedRows}단 → <b>{scrubRow}단</b>까지
           </div>
         )}

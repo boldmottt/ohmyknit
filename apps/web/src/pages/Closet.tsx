@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type Profile, type ProjectSummary } from '../api';
+import { api, onOfflineData, type Profile, type ProjectSummary } from '../api';
 import { emptyHangerArt, garmentArt } from '../closet/garmentArt';
+import { cacheWork } from '../offline';
 import { daysSince, fmtDate, getStoredProfile, Modal, pct, reducedMotion, relDay, setStoredProfile, useToast } from '../ui';
 import { SiteHeader } from '../SiteHeader';
 import '../closet/closet.css';
@@ -180,7 +181,10 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
 
   const wheelLock = useRef(0);
   const onWheel = (e: React.WheelEvent) => {
-    const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+    const horizontal = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+    // 좁은 화면은 세로로 스크롤되는 구성이라, 세로 휠은 스크롤에 양보
+    if (!horizontal && window.matchMedia('(max-width: 900px)').matches) return;
+    const d = horizontal ? e.deltaX : e.deltaY;
     const now = Date.now();
     if (Math.abs(d) < 24 || now - wheelLock.current < 420) return;
     wheelLock.current = now;
@@ -215,6 +219,35 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
       await qc.invalidateQueries({ queryKey: ['projects'] });
     },
   });
+
+  // 옷장을 열 때 각 작품의 작업 화면 자료도 미리 받아 둠 → 나중에 맥북이 꺼져 있어도 이어 뜰 수 있음
+  useEffect(() => {
+    const list = projects.data;
+    if (!list || !navigator.onLine) return;
+    let stop = false;
+    void (async () => {
+      for (const p of list.slice(0, 12)) {
+        if (stop) return;
+        try {
+          await cacheWork(await api.work(p.id));
+        } catch {
+          return; // 연결이 끊겼으면 그만
+        }
+      }
+    })();
+    return () => {
+      stop = true;
+    };
+  }, [projects.data]);
+
+  const [offline, setOffline] = useState(false);
+  useEffect(() => onOfflineData(setOffline), []);
+  // 다시 연결되면 목록을 새로 받음
+  useEffect(() => {
+    const again = () => void qc.invalidateQueries({ queryKey: ['projects'] });
+    window.addEventListener('online', again);
+    return () => window.removeEventListener('online', again);
+  }, [qc]);
 
   const tint = cur?.type === 'project' ? (cur.project.palette[0]?.hex ?? '#C9B7C4') : '#C9B7C4';
   const count = projects.data?.length ?? 0;
@@ -294,7 +327,13 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
         <span>
           {profile.name}의 옷장 <i>|</i> <span className="num">{pad(count)}</span>벌
         </span>
-        <span className="hint">눌러서 꺼내 보기 <i>↔</i> 한 번 더 눌러 이어 뜨기</span>
+        {offline ? (
+          <span className="hint" title="서버에 닿지 않아서 마지막으로 받은 목록을 보여 주고 있어요. 뜨던 작품은 그대로 이어 뜰 수 있어요.">
+            오프라인 <i>·</i> 마지막으로 받은 옷장
+          </span>
+        ) : (
+          <span className="hint">눌러서 꺼내 보기 <i>↔</i> 한 번 더 눌러 이어 뜨기</span>
+        )}
         <Drawer profileId={profile.id} />
       </footer>
     </main>
