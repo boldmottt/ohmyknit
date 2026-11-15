@@ -13,7 +13,7 @@ type Props = {
 };
 
 const W = 560;
-const H = 600;
+const H = 520;
 
 /**
  * 완성본과 비교하기 (기획서 5.4 ②, F4-6).
@@ -30,6 +30,8 @@ export function Compare({ data, snapshots, activePieceId, onPick }: Props) {
     const c = canvas.current;
     if (!c) return;
     const ctx = c.getContext('2d')!;
+    // 레티나에서도 실 결이 보이게 2배로
+    ctx.setTransform(2, 0, 0, 2, 0, 0);
     ctx.clearRect(0, 0, W, H);
     const res = drawAssembled(ctx, { pieces: artPieces(data, snapshots), palette: data.converted.palette, width: W, height: H, hanger: false, activeId: convId });
     setPlaced(res ?? []);
@@ -57,7 +59,7 @@ export function Compare({ data, snapshots, activePieceId, onPick }: Props) {
   return (
     <div className="compare">
       <div className="cmp-art">
-        <canvas ref={canvas} width={W} height={H} onClick={pickAt} role="img" aria-label={`전체 ${pct(all.ratio)} 완성. 뜬 부분만 선명하게 보여요`} />
+        <canvas ref={canvas} width={W * 2} height={H * 2} onClick={pickAt} role="img" aria-label={`전체 ${pct(all.ratio)} 완성. 뜬 부분만 선명하게 보여요`} />
         <div className="cmp-pieces" role="group" aria-label="조각">
           {pieces.map(({ p, prog }) => (
             <button key={p.id} className={`chip${p.id === activePieceId ? ' on' : ''}`} onClick={() => onPick(p.id)}>

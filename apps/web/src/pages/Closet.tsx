@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, onOfflineData, type Profile, type ProjectSummary } from '../api';
-import { emptyHangerArt, garmentArt } from '../closet/garmentArt';
-import { workArtUrl } from '../closet/assembledArt';
+import { garmentArt } from '../closet/garmentArt';
+import { outlineArt, workArtUrl } from '../closet/assembledArt';
 import { cacheWork, cachedWork } from '../offline';
 import { daysSince, fmtDate, getStoredProfile, Modal, pct, reducedMotion, relDay, setStoredProfile, useToast } from '../ui';
 import { SiteHeader } from '../SiteHeader';
@@ -120,14 +120,21 @@ function NameTags({ profiles, loading, error, onPick }: { profiles: Profile[]; l
 }
 
 /** 레일에서 k번째 뒤(0 = 맨 앞)의 자리. 단위는 --u (화면 크기에 비례) */
-function slot(k: number): React.CSSProperties {
-  const gone = k < 0;
-  const kk = gone ? -1.2 : k;
+/**
+ * 가운데에 겹쳐 놓인 옷 무리: 앞의 한 벌이 가장 크고, 양옆으로 한 벌씩 작아지며 뒤로 겹침.
+ * d는 앞 옷과의 거리(음수는 왼쪽). 3벌 넘게 떨어진 옷은 숨김.
+ */
+const SPREAD = [0, 15.5, 23.5, 30];
+const SCALE = [1, 0.8, 0.62, 0.5];
+function slot(d: number, entered: boolean): React.CSSProperties {
+  const a = Math.min(3, Math.abs(d));
+  const x = Math.sign(d) * SPREAD[a]!;
+  const s = SCALE[a]!;
   return {
-    transform: `translate3d(calc(var(--u) * ${(kk * 7.2).toFixed(2)}), calc(var(--u) * ${(kk * 1.2).toFixed(2)}), calc(var(--u) * ${(kk * -9).toFixed(2)})) rotateY(${k === 0 ? -6 : -26}deg)`,
-    opacity: gone ? 0 : Math.max(0, 1 - Math.max(0, k - 5) * 0.34),
-    zIndex: 100 - k,
-    pointerEvents: gone || k > 7 ? 'none' : undefined,
+    transform: `translate3d(calc(var(--cu) * ${x.toFixed(2)}), calc(var(--cu) * ${entered ? 0 : 5}), 0) scale(${(entered ? s : s * 0.9).toFixed(3)})`,
+    opacity: entered && Math.abs(d) <= 2 ? 1 : 0,
+    zIndex: 100 - a * 10,
+    pointerEvents: Math.abs(d) > 2 ? 'none' : undefined,
   };
 }
 
@@ -262,12 +269,6 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
 
   return (
     <main className="rail-view" style={{ ['--tint' as string]: tint }} onWheel={onWheel}>
-      <div className="rail-index" aria-hidden="true">
-        <span className="num">{pad(Math.min(active + 1, n))}</span>
-        <i><b style={{ height: `${((active + 1) / n) * 100}%` }} /></i>
-        <span className="num">{pad(n)}</span>
-      </div>
-
       <div
         ref={stage}
         className={`rail-stage${entered ? ' entered' : ''}`}
@@ -276,35 +277,35 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
         onPointerUp={() => setTimeout(() => (drag.current = null), 0)}
         onPointerCancel={() => (drag.current = null)}
       >
+        <div className="rail-word" aria-hidden="true">KNIT</div>
         <div className="rail-space">
-          <div className="rail-bar" aria-hidden="true" />
           {projects.isLoading && <p className="quiet rail-msg">옷을 꺼내는 중…</p>}
           {projects.error && <p className="error rail-msg">{(projects.error as Error).message}</p>}
           {items.map((it, i) => {
             const id = it.type === 'new' ? 'new' : it.project.id;
-            // 맨 앞보다 하나 앞(-1)은 화면 밖으로 빠진 옷. 나머지는 뒤로 줄지어 섬
+            // 앞 옷과의 거리: 순환하므로 가까운 쪽으로 (음수 = 왼쪽)
             let k = (i - active + n) % n;
-            if (n > 2 && k === n - 1) k = -1;
+            if (k > n / 2) k -= n;
             const before = prevK.current.get(id);
             const jump = before !== undefined && Math.abs(before - k) > 1.5;
             prevK.current.set(id, k);
-            const src = it.type === 'new' ? emptyHangerArt() : (artById.get(it.project.id) ?? garmentArt(it.project));
+            const src = it.type === 'new' ? outlineArt() : (artById.get(it.project.id) ?? outlineArt(it.project.palette[0]?.hex, false));
             const label = it.type === 'new' ? '새 프로젝트 걸기' : `${it.project.name}, ${pct(it.project.progress)} 진행`;
             return (
               <button
                 key={id}
                 className={`hang${k === 0 ? ' front' : ''}${jump ? ' jump' : ''}${it.type === 'new' ? ' empty' : ''}`}
-                style={{ ...slot(entered ? k : k + 7), transitionDelay: entered ? `${Math.max(0, k) * 45}ms` : undefined }}
+                style={{ ...slot(k, entered), transitionDelay: entered ? `${Math.abs(k) * 70}ms` : undefined }}
                 aria-label={label}
                 aria-current={k === 0}
-                tabIndex={k < 0 ? -1 : 0}
+                tabIndex={Math.abs(k) > 2 ? -1 : 0}
                 onClick={() => {
                   if (drag.current?.moved) return;
                   if (k === 0) follow(it);
                   else setActive(i);
                 }}
               >
-                <span className="hang-sway" style={{ animationDelay: `${-(i * 1.3) % 7}s` }}>
+                <span className="hang-sway" style={{ animationDelay: `${-(i * 1.7) % 7}s` }}>
                   <img className="garment-art" src={src} alt="" draggable={false} />
                   {it.type === 'new' && <span className="hang-plus">＋</span>}
                 </span>
@@ -313,6 +314,29 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
           })}
         </div>
       </div>
+
+      <div className="rail-dots" role="tablist" aria-label="옷 고르기">
+        {items.map((it, i) => (
+          <button
+            key={it.type === 'new' ? 'new' : it.project.id}
+            role="tab"
+            aria-selected={i === active}
+            aria-label={it.type === 'new' ? '새 작품' : it.project.name}
+            onClick={() => setActive(i)}
+          />
+        ))}
+      </div>
+
+      <div className="rail-count" aria-hidden="true">
+        <span className="big num">{pad(Math.min(active + 1, n))}</span>
+        <span className="label">
+          {cur?.type === 'project' ? (cur.project.kind === 'hat' ? 'HAT' : 'SWEATER') : 'NEW'}
+          <br />
+          {cur?.type === 'project' ? (cur.project.progress >= 1 ? '다 뜬 옷' : `${pct(cur.project.progress)} 떴어요`) : '새 작품 걸기'}
+        </span>
+      </div>
+
+      <p className="rail-side" aria-hidden="true">HAND KNIT CLOSET — ROW BY ROW</p>
 
       {cur && (
         <aside className="detail" key={cur.type === 'new' ? 'new' : cur.project.id} aria-live="polite">
