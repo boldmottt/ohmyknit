@@ -2,6 +2,13 @@ import { useState } from 'react';
 import { api } from '../api';
 import { Modal } from '../ui';
 
+/** 받침에 맞춰 은/는 붙이기 (가슴둘레는, 총장은) */
+function withTopic(word: string): string {
+  const c = word.charCodeAt(word.length - 1) - 0xac00;
+  if (c < 0 || c > 11171) return `${word}은(는)`;
+  return word + (c % 28 ? '은' : '는');
+}
+
 export function CheckinDialog(p: {
   pieceId: string;
   atRow: number;
@@ -189,11 +196,19 @@ export function LockDialog(p: { text: string[]; onClose: () => void; onConfirm: 
   );
 }
 
-export function FinishDialog(p: { projectId: string; finishedKeys: string[]; onClose: () => void; onDone: (msg: string) => void }) {
+export function FinishDialog(p: { projectId: string; design: Record<string, number>; onClose: () => void; onDone: (msg: string) => void }) {
   const [vals, setVals] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const keys = p.finishedKeys.length ? p.finishedKeys : ['가슴둘레', '총장'];
+  /** 도안 치수와 크게 다른 값을 한 번 보여 줬는지 (두 번째 누르면 그대로 진행) */
+  const [warned, setWarned] = useState('');
+  const keys = Object.keys(p.design).length ? Object.keys(p.design) : ['가슴둘레', '총장'];
+  // 오타(91 → 9.1), 단위(cm ↔ mm), 단면·둘레 혼동은 대개 25% 넘게 차이 나요
+  const odd = keys
+    .filter((k) => Number(vals[k]) > 0 && p.design[k])
+    .filter((k) => Math.abs(Number(vals[k]) / p.design[k]! - 1) > 0.25)
+    .map((k) => `${k} ${vals[k]}cm (도안 ${p.design[k]}cm)`);
+  const oddKey = odd.join('|');
   return (
     <Modal title="🎉 완성 실측 입력하기" onClose={p.onClose}>
       <p className="muted small">블로킹까지 마친 뒤 재 주세요. 이 값으로 다음 작품의 게이지 보정이 더 정확해져요.</p>
@@ -201,10 +216,15 @@ export function FinishDialog(p: { projectId: string; finishedKeys: string[]; onC
         {keys.map((k) => (
           <label key={k} className="field">
             <span>{k} (cm)</span>
-            <input inputMode="decimal" value={vals[k] ?? ''} onChange={(e) => setVals({ ...vals, [k]: e.target.value })} />
+            <input inputMode="decimal" placeholder={p.design[k] ? `도안 ${p.design[k]}` : ''} value={vals[k] ?? ''} onChange={(e) => setVals({ ...vals, [k]: e.target.value })} />
           </label>
         ))}
       </div>
+      {odd.length > 0 && (
+        <p className="badge warn" style={{ display: 'block', padding: 10, marginTop: 10 }}>
+          ⚠ {odd.join(', ')} — 도안과 25% 넘게 달라요. 오타나 단위(mm), 단면·둘레를 확인해 주세요. 이 값은 손 보정 학습에 쓰지 않아요.
+        </p>
+      )}
       {err && <p className="error">{err}</p>}
       <div className="row" style={{ marginTop: 12 }}>
         <button className="btn" onClick={p.onClose}>나중에</button>
@@ -212,12 +232,20 @@ export function FinishDialog(p: { projectId: string; finishedKeys: string[]; onC
           className="btn primary"
           disabled={busy}
           onClick={async () => {
+            if (odd.length && warned !== oddKey) {
+              setWarned(oddKey);
+              setErr('값을 확인한 뒤 한 번 더 누르면 완성 처리해요');
+              return;
+            }
             setBusy(true);
             try {
               const measured = Object.fromEntries(Object.entries(vals).map(([k, v]) => [k, Number(v)]).filter(([, v]) => (v as number) > 0));
               const r = await api.finish(p.projectId, measured);
               const k = r.learned.coefficient?.kSt;
-              p.onDone(k ? `완성! 큰 작품 보정 계수가 ${k.toFixed(3)}로 업데이트됐어요` : '완성! 완성 옷장으로 옮겼어요');
+              const skipped = r.learned.ignored?.length
+                ? ` (${withTopic(r.learned.ignored.map((x) => x.key).join(', '))} 예상과 너무 달라서 학습에서 뺐어요)`
+                : '';
+              p.onDone((k ? `완성! 큰 작품 보정 계수가 ${k.toFixed(3)}로 업데이트됐어요` : '완성! 완성 옷장으로 옮겼어요') + skipped);
             } catch (x) {
               setErr((x as Error).message);
               setBusy(false);

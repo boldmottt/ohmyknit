@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { convertPattern } from '@knitcloset/gauge-engine';
 import { parsePattern, SAMPLE_BEANIE, SAMPLE_PATTERN, type Pattern } from '@knitcloset/pattern-schema';
 import type { WorkData } from './api';
-import { checkinAdvice, colorRun, readsFromLeft } from './derive';
+import { checkinAdvice, colorRun, parseLooseJson, readsFromLeft } from './derive';
 import { applyDesign, designFromPattern, designToPattern, isStandalone, resizeGrid } from './studio/design';
 
 const sweater = parsePattern(SAMPLE_PATTERN);
@@ -97,5 +97,17 @@ describe('배색 줄 읽는 방향', () => {
     expect(readsFromLeft({ construction: 'flat' }, 1)).toBe(false);
     expect(readsFromLeft({ construction: 'flat' }, 2)).toBe(true);
     expect(readsFromLeft({ construction: 'round' }, 2)).toBe(false);
+  });
+});
+
+describe('AI가 준 JSON 읽기', () => {
+  it('코드 표시·앞뒤 설명·확인 필요 목록이 붙어 있어도 읽음', () => {
+    const body = '{"title":"조끼 {S}","pieces":[{"id":"a"}],"note":"따옴표 \\" 안의 } 괄호"}';
+    expect(parseLooseJson(body)).toMatchObject({ title: '조끼 {S}' });
+    expect(parseLooseJson('```json\n' + body + '\n```')).toMatchObject({ title: '조끼 {S}' });
+    expect(parseLooseJson('여기 있어요:\n' + body + '\n\n확인 필요:\n- 진동 단 수 {흐림}')).toMatchObject({ pieces: [{ id: 'a' }] });
+  });
+  it('JSON이 아예 없으면 오류', () => {
+    expect(() => parseLooseJson('도안을 못 읽었어요')).toThrow();
   });
 });

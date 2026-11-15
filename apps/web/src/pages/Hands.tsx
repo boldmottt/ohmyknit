@@ -60,6 +60,14 @@ export default function Hands() {
     mutationFn: (id: string) => api.deleteSwatch(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['hands'] }),
   });
+  const resetCoef = useMutation({
+    mutationFn: (k: { technique: string; yarnWeight: string; needleMaterial: string }) => api.resetCoefficient(profileId!, k),
+    onSuccess: async () => {
+      toast({ text: '보정 계수를 초기화했어요' });
+      await qc.invalidateQueries({ queryKey: ['hands'] });
+      await qc.invalidateQueries({ queryKey: ['suggest'] });
+    },
+  });
   const saveBody = useMutation({
     mutationFn: () =>
       api.updateProfile(profileId!, {
@@ -157,7 +165,7 @@ export default function Hands() {
         {hands.data?.coefficients.length ? (
           <table className="dims">
             <thead>
-              <tr><th>기법</th><th>실</th><th>바늘</th><th>코</th><th>단</th><th>표본</th></tr>
+              <tr><th>기법</th><th>실</th><th>바늘</th><th>코</th><th>단</th><th>표본</th><th /></tr>
             </thead>
             <tbody>
               {hands.data.coefficients.map((c, i) => (
@@ -168,12 +176,28 @@ export default function Hands() {
                   <td>×{c.kSt.toFixed(3)}</td>
                   <td>×{c.kRow.toFixed(3)}</td>
                   <td>{c.sampleCount}</td>
+                  <td>
+                    <button
+                      className="btn small ghost"
+                      onClick={() =>
+                        window.confirm('이 보정 계수를 지우고 스와치 게이지부터 다시 배울까요? (완성 기록은 남아요)') &&
+                        resetCoef.mutate({ technique: c.technique, yarnWeight: c.yarnWeight, needleMaterial: c.needleMaterial })
+                      }
+                    >
+                      초기화
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         ) : (
           <p className="muted">아직 없어요. 작품을 완성하고 실측을 넣으면 생겨요.</p>
+        )}
+        {hands.data?.coefficients.some((c) => c.kSt < 0.75 || c.kSt > 1.33 || c.kRow < 0.75 || c.kRow > 1.33) && (
+          <p className="badge warn" style={{ display: 'block', padding: 10 }}>
+            ⚠ 범위를 벗어난 계수가 있어요. 실측 오타로 잘못 배웠을 수 있어요. 추천에는 0.75~1.33 안으로 줄여서 쓰고 있으니, 초기화를 권해요.
+          </p>
         )}
         {hands.data?.finished.length ? (
           <>

@@ -287,7 +287,11 @@ export const api = {
   restore: (id: string) => req('POST', `/projects/${id}/restore`),
   deleteProject: (id: string, confirm: string) => req('DELETE', `/projects/${id}?confirm=${encodeURIComponent(confirm)}`),
   finish: (id: string, measured: Record<string, number>) =>
-    req<{ expected: Record<string, number>; measured: Record<string, number>; learned: { kActualSt?: number; coefficient?: { kSt: number } } }>(
+    req<{
+      expected: Record<string, number>;
+      measured: Record<string, number>;
+      learned: { kActualSt?: number; coefficient?: { kSt: number }; ignored?: { key: string; measured: number; expected: number }[] };
+    }>(
       'POST',
       `/projects/${id}/finish`,
       { measured },
@@ -317,6 +321,8 @@ export const api = {
     ),
   addSwatch: (profileId: string, b: Partial<Swatch>) => req<{ id: string }>('POST', `/profiles/${profileId}/swatches`, b),
   deleteSwatch: (id: string) => req('DELETE', `/swatches/${id}`),
+  resetCoefficient: (profileId: string, k: { technique: string; yarnWeight: string; needleMaterial: string }) =>
+    req('DELETE', `/profiles/${profileId}/coefficients?${new URLSearchParams(k)}`),
   patterns: () => req<PatternListItem[]>('GET', '/patterns'),
   pattern: (id: string) => req<PatternListItem & { pattern: Pattern }>('GET', `/patterns/${id}`),
   createPattern: (pattern: unknown, meta: { profileId?: string; sourceType?: string; fileKey?: string } = {}) =>
