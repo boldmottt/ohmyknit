@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
 import type { ProgressSnapshot } from '@knitcloset/gauge-engine';
 import type { WorkData } from '../api';
-import { artPieces, drawAssembled, type PlacedPiece } from '../closet/assembledArt';
+import { artPieces, drawAssembled, type ArtPiece } from '../closet/assembledArt';
 import { convertedPiece, expectedLengthCm, formatHours, overall, pieceStitchProgress, remainingMinutes } from '../derive';
+import { PatternBoard } from '../sim/PatternBoard';
 import { pct } from '../ui';
+
+const GarmentViewer = lazy(() => import('../sim/GarmentViewer'));
 
 type Props = {
   data: WorkData;
@@ -12,56 +15,57 @@ type Props = {
   onPick: (pieceId: string) => void;
 };
 
-const W = 560;
-const H = 520;
+/** WebGL을 못 쓰는 기기: 조각을 평면으로 조립한 2D 그림 */
+function Flat({ pieces, data, activeId }: { pieces: ArtPiece[]; data: WorkData; activeId?: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const ctx = ref.current?.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(2, 0, 0, 2, 0, 0);
+    ctx.clearRect(0, 0, 560, 500);
+    drawAssembled(ctx, { pieces, palette: data.converted.palette, width: 560, height: 500, activeId });
+  }, [pieces, data, activeId]);
+  return <canvas ref={ref} width={1120} height={1000} className="garment-3d flat" />;
+}
 
 /**
  * 완성본과 비교하기 (기획서 5.4 ②, F4-6).
- * 변환된 도안 그대로 조각마다 실제 니트를 그리고, **지금까지 뜬 단(과 코)까지만** 선명하게 보여요.
- * 조각들은 실제 cm 비율로 옷 모양으로 조립합니다.
+ * 위: 패턴판을 마네킹에 입혀 조립한 3D (드래그로 돌려 보기).
+ * 아래: 패턴판을 평평하게 늘어놓은 2D.
+ * 둘 다 완성 모습은 반투명, 실제로 뜬 단(과 지금 단의 뜬 코)까지만 진하게.
  */
 export function Compare({ data, snapshots, activePieceId, onPick }: Props) {
   const all = overall(data, snapshots);
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const [placed, setPlaced] = useState<PlacedPiece[]>([]);
+  const pieces = useMemo(() => artPieces(data, snapshots), [data, snapshots]);
   const convId = convertedPiece(data, activePieceId)?.id;
+  const pickConv = (cid: string) => {
+    const st = data.pieces.find((p) => convertedPiece(data, p.id)?.id === cid);
+    if (st) onPick(st.id);
+  };
 
-  useEffect(() => {
-    const c = canvas.current;
-    if (!c) return;
-    const ctx = c.getContext('2d')!;
-    // 레티나에서도 실 결이 보이게 2배로
-    ctx.setTransform(2, 0, 0, 2, 0, 0);
-    ctx.clearRect(0, 0, W, H);
-    const res = drawAssembled(ctx, { pieces: artPieces(data, snapshots), palette: data.converted.palette, width: W, height: H, hanger: false, activeId: convId });
-    setPlaced(res ?? []);
-  }, [data, snapshots, convId]);
-
-  const pieces = data.pieces.map((p) => {
+  const chips = data.pieces.map((p) => {
     const conv = convertedPiece(data, p.id)!;
-    const snap = snapshots[p.id]!;
-    return { p, conv, prog: pieceStitchProgress(conv, snap) };
+    return { p, prog: pieceStitchProgress(conv, snapshots[p.id]!) };
   });
   const activeConv = convertedPiece(data, activePieceId);
   const activeSnap = snapshots[activePieceId];
   const remainMin = remainingMinutes(data, all.total - all.done);
-
-  const pickAt = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - r.left) / r.width) * W;
-    const y = ((e.clientY - r.top) / r.height) * H;
-    // 몸판이 맨 위에 그려지므로 뒤에서부터 찾음
-    const hit = [...placed].reverse().find((q) => x >= q.box.x && x <= q.box.x + q.box.w && y >= q.box.y && y <= q.box.y + q.box.h);
-    const st = hit && data.pieces.find((p) => convertedPiece(data, p.id)?.id === hit.id);
-    if (st) onPick(st.id);
-  };
+  const flat = <Flat pieces={pieces} data={data} activeId={convId} />;
 
   return (
     <div className="compare">
       <div className="cmp-art">
-        <canvas ref={canvas} width={W * 2} height={H * 2} onClick={pickAt} role="img" aria-label={`전체 ${pct(all.ratio)} 완성. 뜬 부분만 선명하게 보여요`} />
+        <div className="cmp-3d" aria-label={`전체 ${pct(all.ratio)} 완성. 진한 부분이 실제로 뜬 곳, 반투명한 부분이 남은 곳`}>
+          <Suspense fallback={flat}>
+            <GarmentViewer pieces={pieces} palette={data.converted.palette} activeId={convId} onPick={pickConv} fallback={flat} />
+          </Suspense>
+          <p className="cmp-legend">
+            <span className="sw solid" /> 뜬 단 <span className="sw ghost" /> 남은 단 <i>·</i> 드래그해서 돌려 보기
+          </p>
+        </div>
+        <PatternBoard pieces={pieces} palette={data.converted.palette} activeId={convId} onPick={pickConv} height={200} />
         <div className="cmp-pieces" role="group" aria-label="조각">
-          {pieces.map(({ p, prog }) => (
+          {chips.map(({ p, prog }) => (
             <button key={p.id} className={`chip${p.id === activePieceId ? ' on' : ''}`} onClick={() => onPick(p.id)}>
               {p.name} <span className="num">{pct(prog.ratio)}</span>
             </button>
@@ -79,7 +83,7 @@ export function Compare({ data, snapshots, activePieceId, onPick }: Props) {
           남은 코 약 {Math.max(0, all.total - all.done).toLocaleString('ko-KR')}코
           {remainMin !== null ? ` · 약 ${formatHours(remainMin)}` : ''}
         </div>
-        <div className="muted small">옷의 조각이나 아래 이름을 누르면 그 조각으로 이동해요 · 선명한 부분이 실제로 뜬 곳이에요</div>
+        <div className="muted small">3D나 패턴판에서 조각을 누르면 그 조각으로 이동해요</div>
       </div>
     </div>
   );

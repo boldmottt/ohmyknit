@@ -45,7 +45,7 @@ export type PlacedPiece = {
 
 export type Role = 'main' | 'sleeveL' | 'sleeveR';
 
-const CELL = 4;
+export const CELL = 4;
 const fabricCache = new Map<string, HTMLCanvasElement>();
 
 function makeCanvas(w: number, h: number): HTMLCanvasElement {
@@ -56,7 +56,7 @@ function makeCanvas(w: number, h: number): HTMLCanvasElement {
 }
 
 /** 조각 하나를 다 뜬 모습으로 (조각·실 색이 같으면 다시 그리지 않음) */
-function fullFabric(piece: ConvertedPiece, palette: Palette): HTMLCanvasElement {
+export function fullFabric(piece: ConvertedPiece, palette: Palette): HTMLCanvasElement {
   const key = JSON.stringify([piece.id, piece.totalRows, piece.castOn.value, piece.rows.length, palette.map((p) => [p.hex, p.hex2, p.heather]), piece.sections.map((s) => s.chart?.grid.length ?? 0)]);
   const hit = fabricCache.get(key);
   if (hit) return hit;
@@ -84,7 +84,7 @@ export function roles(pieces: ArtPiece[]): Map<ArtPiece, Role> {
 }
 
 /** 조각 크기 (cm): 원통뜨기는 앞면 절반 너비 */
-function sizeCm(p: ArtPiece) {
+export function sizeCm(p: ArtPiece) {
   const layout = fabricLayout(p.piece, CELL);
   return { w: (layout.maxStitches / p.gauge.st) * 10, h: (layout.totalRows / p.gauge.row) * 10 };
 }
@@ -234,7 +234,7 @@ function silhouette(p: ArtPiece, w: number, h: number, role: Role, isHat: boolea
 }
 
 /** 뜬 단이 차지하는 y 구간 (조각 캔버스 좌표) */
-function knitBand(p: ArtPiece, h: number): { y0: number; y1: number; edge: number | null } {
+export function knitBand(p: ArtPiece, h: number): { y0: number; y1: number; edge: number | null } {
   const layout = fabricLayout(p.piece, CELL);
   const sy = h / layout.height;
   const done = Math.max(0, Math.min(p.piece.totalRows, p.completedRows));

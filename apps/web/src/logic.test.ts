@@ -150,3 +150,65 @@ describe('뜬 만큼 보이는 옷 (조립 그림 재료)', () => {
     expect([...r.values()]).toEqual(['main']);
   });
 });
+
+import { ARM_ANGLE, layoutOf, simRoles, tubeOf } from './sim/shape';
+
+describe('패턴판 → 3D 조립 모양', () => {
+  const ap = (piece: (typeof converted.pieces)[number], completedRows = 0) => ({ piece, completedRows, gauge: { st: 25, row: 33 } });
+  const sweaterPieces = converted.pieces.map((p) => ap(p));
+
+  it('몸판은 가운데, 소매는 왼쪽·오른쪽, 비니는 모자', () => {
+    const r = simRoles(sweaterPieces);
+    expect(sweaterPieces.map((p) => r.get(p))).toEqual(['body', 'sleeveL', 'sleeveR']);
+    const hat = convertPattern(parsePattern(SAMPLE_BEANIE), { size: '성인', myGauge: { st: 22, row: 30 } });
+    expect([...simRoles(hat.pieces.map((piece) => ({ piece, completedRows: 0, gauge: { st: 22, row: 30 } }))).values()]).toEqual(['hat']);
+  });
+
+  it('둘레 = 콧수 ÷ 게이지, 길이 = 단 수 ÷ 단 게이지 (원통 몸판)', () => {
+    const t = tubeOf(sweaterPieces[0]!, 'body');
+    const r0 = t.rings[0]!;
+    // 타원 둘레 (라마누잔 근사)
+    const a = r0.rx;
+    const b = r0.rz;
+    const perim = Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
+    expect(perim).toBeCloseTo((228 / 25) * 10, 0);
+    expect(t.length).toBeCloseTo((151 / 33) * 10, 0);
+    expect(t.rings[0]!.t).toBe(0);
+  });
+
+  it('소매는 늘림만큼 위가 넓고, 위에서 아래로 뜨면 1단이 위쪽 끝', () => {
+    const sl = sweaterPieces[1]!;
+    const t = tubeOf(sl, 'sleeveL');
+    expect(t.rings[t.rings.length - 1]!.rx).toBeGreaterThan(t.rings[0]!.rx * 1.3);
+    const down = tubeOf({ ...sl, piece: { ...sl.piece, direction: 'top_down' } }, 'sleeveL');
+    expect(down.rings[0]!.t).toBeCloseTo(down.length, 5);
+    expect(down.rings[down.rings.length - 1]!.t).toBeCloseTo(0, 5);
+  });
+
+  it('소매 윗단이 몸판 겨드랑이 바깥 어깨에 붙고, 몸 바깥으로 벌어짐', () => {
+    const L = layoutOf(sweaterPieces);
+    const [, left, right] = sweaterPieces;
+    const pl = L.place.get(left!)!;
+    const tl = L.tubes.get(left!)!;
+    expect(pl.tilt).toBeCloseTo(-ARM_ANGLE);
+    expect(L.place.get(right!)!.tilt).toBeCloseTo(ARM_ANGLE);
+    // 소맷부리(원점)는 어깨보다 아래·바깥, 윗단(원점 + 축 × 길이)은 겨드랑이 바깥
+    const top = [pl.origin[0] - Math.sin(pl.tilt) * tl.length, pl.origin[1] + Math.cos(pl.tilt) * tl.length];
+    expect(pl.origin[1]).toBeLessThan(L.topY);
+    expect(pl.origin[0]).toBeLessThan(top[0]!);
+    expect(top[0]!).toBeLessThan(-L.topRx);
+    expect(top[1]!).toBeGreaterThan(L.topY);
+  });
+
+  it('비니는 머리에 씌운 모양: 챙은 이마, 정수리로 갈수록 좁아짐', () => {
+    const hat = convertPattern(parsePattern(SAMPLE_BEANIE), { size: '성인', myGauge: { st: 22, row: 30 } });
+    const L = layoutOf(hat.pieces.map((piece) => ({ piece, completedRows: 0, gauge: { st: 22, row: 30 } })));
+    expect(L.isHat).toBe(true);
+    expect(L.head).not.toBeNull();
+    const rings = [...L.tubes.values()][0]!.rings;
+    const brim = rings.reduce((a, b) => (a.t < b.t ? a : b));
+    const top = rings.reduce((a, b) => (a.t > b.t ? a : b));
+    expect(top.rx).toBeLessThan(brim.rx * 0.35);
+    expect(top.t).toBeGreaterThan(L.head!.cy + L.head!.rv * 0.9);
+  });
+});

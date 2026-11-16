@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, onOfflineData, type Profile, type ProjectSummary } from '../api';
+import { api, onOfflineData, type Profile, type ProjectSummary, type WorkData } from '../api';
 import { garmentArt } from '../closet/garmentArt';
-import { outlineArt, workArtUrl } from '../closet/assembledArt';
+import { artPieces, outlineArt, workArtUrl } from '../closet/assembledArt';
+
+const SimSheet = lazy(() => import('../closet/SimSheet'));
 import { cacheWork, cachedWork } from '../offline';
 import { daysSince, fmtDate, getStoredProfile, Modal, pct, reducedMotion, relDay, setStoredProfile, useToast } from '../ui';
 import { SiteHeader } from '../SiteHeader';
@@ -249,11 +251,38 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
     })),
   });
   const artById = new Map<string, string>();
+  const workById = new Map<string, WorkData>();
   for (const w of works) {
     if (!w.data) continue;
+    workById.set(w.data.project.id, w.data);
     const url = workArtUrl(w.data);
     if (url) artById.set(w.data.project.id, url);
   }
+  // 패턴판을 마네킹에 입힌 3D 정지 그림 (WebGL이 없으면 위의 2D 그림 그대로)
+  const [stills, setStills] = useState<Record<string, string>>({});
+  const workSig = works.map((w) => (w.data ? `${w.data.project.id}:${w.dataUpdatedAt}` : '')).join('|');
+  useEffect(() => {
+    const list = works.map((w) => w.data).filter((d): d is WorkData => !!d);
+    let stop = false;
+    void import('../sim/stills').then(async (m) => {
+      const empty = await m.renderEmptyStill();
+      if (empty && !stop) setStills((s) => (s.__new === empty ? s : { ...s, __new: empty }));
+      for (const d of list) {
+        if (stop) return;
+        const pieces = artPieces(d);
+        const key = m.stillKey(d.project.id, pieces, d.converted.palette);
+        const url = m.cachedStill(key) ?? (await m.renderStill(key, pieces, d.converted.palette));
+        if (stop) return;
+        if (url) setStills((s) => (s[d.project.id] === url ? s : { ...s, [d.project.id]: url }));
+      }
+    });
+    return () => {
+      stop = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workSig]);
+  const [sim, setSim] = useState<string | null>(null);
+  const simData = sim ? workById.get(sim) : undefined;
 
   const [offline, setOffline] = useState(false);
   useEffect(() => onOfflineData(setOffline), []);
@@ -289,7 +318,10 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
             const before = prevK.current.get(id);
             const jump = before !== undefined && Math.abs(before - k) > 1.5;
             prevK.current.set(id, k);
-            const src = it.type === 'new' ? outlineArt() : (artById.get(it.project.id) ?? outlineArt(it.project.palette[0]?.hex, false));
+            const src =
+              it.type === 'new'
+                ? (stills.__new ?? outlineArt())
+                : (stills[it.project.id] ?? artById.get(it.project.id) ?? outlineArt(it.project.palette[0]?.hex, false));
             const label = it.type === 'new' ? '새 프로젝트 걸기' : `${it.project.name}, ${pct(it.project.progress)} 진행`;
             return (
               <button
@@ -343,8 +375,22 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
           <p className="eyebrow num">
             {pad(active + 1)} / {pad(n)}
           </p>
-          {cur.type === 'project' ? <ProjectDetail p={cur.project} onArchive={() => archive.mutate(cur.project)} /> : <NewDetail count={count} />}
+          {cur.type === 'project' ? (
+            <ProjectDetail
+              p={cur.project}
+              onArchive={() => archive.mutate(cur.project)}
+              onSim={workById.has(cur.project.id) ? () => setSim(cur.project.id) : undefined}
+            />
+          ) : (
+            <NewDetail count={count} />
+          )}
         </aside>
+      )}
+
+      {simData && (
+        <Suspense fallback={null}>
+          <SimSheet data={simData} onClose={() => setSim(null)} />
+        </Suspense>
       )}
 
       <div className="rail-pager">
@@ -372,7 +418,7 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
   );
 }
 
-function ProjectDetail({ p, onArchive }: { p: ProjectSummary; onArchive: () => void }) {
+function ProjectDetail({ p, onArchive, onSim }: { p: ProjectSummary; onArchive: () => void; onSim?: () => void }) {
   return (
     <>
       <h1>{p.name}</h1>
@@ -412,6 +458,11 @@ function ProjectDetail({ p, onArchive }: { p: ProjectSummary; onArchive: () => v
           이어하기 <span aria-hidden="true">↗</span>
         </Link>
         <span className="sub-actions">
+          {onSim && (
+            <button className="linkish" onClick={onSim}>
+              3D로 입혀 보기
+            </button>
+          )}
           <Link className="linkish" to={`/project/${p.id}/edit`}>내용 수정하기</Link>
           <button className="linkish" onClick={onArchive}>서랍 보관하기</button>
         </span>
