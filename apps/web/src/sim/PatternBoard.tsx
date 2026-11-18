@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Palette } from '@knitcloset/knit-render';
 import type { ArtPiece } from '../closet/assembledArt';
-import { drawBoard, type BoardHit } from './patternBoard';
+import { drawBoard, type BoardHit } from './boardDraw';
 
 type Props = {
   pieces: ArtPiece[];

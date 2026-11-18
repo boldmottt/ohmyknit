@@ -212,3 +212,67 @@ describe('패턴판 → 3D 조립 모양', () => {
     expect(top.t).toBeGreaterThan(L.head!.cy + L.head!.rv * 0.9);
   });
 });
+
+import { armAxis, drape, girth, RIB_CINCH } from './sim/drape';
+
+describe('입힌 모양: 조각 연결과 실루엣', () => {
+  const ap = (piece: (typeof converted.pieces)[number]) => ({ piece, completedRows: 0, gauge: { st: 25, row: 33 } });
+  const sweaterPieces = converted.pieces.map((p) => ap(p));
+  const D = drape(sweaterPieces);
+  const [bodyP, sleeveP] = sweaterPieces;
+
+  it('고무단은 조여서 몸통보다 좁고, 몸통 둘레는 콧수 ÷ 게이지 그대로', () => {
+    const sheet = D.sheets.get(bodyP!)!;
+    const full = (228 / 25) * 10;
+    expect(girth(sheet, 80)).toBeGreaterThan(full * 0.97);
+    expect(girth(sheet, 80)).toBeLessThan(full * 1.03);
+    expect(girth(sheet, 2)).toBeLessThan(full * (1 - RIB_CINCH * 0.7));
+  });
+
+  it('소매는 팔처럼 굽음: 어깨 쪽이 더 벌어지고 소맷부리는 앞으로 나옴', () => {
+    const L = D.layout;
+    const pl = L.place.get(sleeveP!)!;
+    const len = D.tubes.get(sleeveP!)!.length;
+    const axis = armAxis(pl, len);
+    const top = axis.at(len);
+    const cuff = axis.at(0);
+    // 윗단은 shape가 정한 어깨 자리 그대로
+    expect(top.p[0]).toBeCloseTo(pl.origin[0] - Math.sin(pl.tilt) * len, 5);
+    expect(top.p[1]).toBeCloseTo(pl.origin[1] + Math.cos(pl.tilt) * len, 5);
+    expect(Math.abs(top.y[0])).toBeGreaterThan(Math.abs(cuff.y[0]));
+    expect(cuff.p[2]).toBeGreaterThan(top.p[2] + 1);
+    // 축을 따라 잰 길이는 소매 길이 그대로
+    let s = 0;
+    for (let i = 0; i < 100; i++) {
+      const a = axis.at((len * i) / 100).p;
+      const b = axis.at((len * (i + 1)) / 100).p;
+      s += Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+    }
+    expect(s).toBeCloseTo(len, 0);
+  });
+
+  it('요크 조각이 없으면 몸판·소매 윗단을 감싸서 목으로 모이는 예상 요크가 생김', () => {
+    const yoke = D.impliedYoke!;
+    expect(yoke).not.toBeNull();
+    const L = D.layout;
+    const R = yoke.sheet.rows;
+    // 아랫단: 앞 가운데는 몸판 윗단 높이, 옆은 소매 윗단 바깥까지
+    const front = yoke.sheet.at(0.25, 0);
+    expect(front[1]).toBeCloseTo(L.topY, 0);
+    expect(front[2]).toBeGreaterThanOrEqual(L.topRz);
+    const side = yoke.sheet.at(0, 0);
+    expect(Math.abs(side[0])).toBeGreaterThan(Math.abs(L.shoulder![0]));
+    // 윗단: 목둘레로 좁아지고 겨드랑이보다 위
+    expect(girth(yoke.sheet, R)).toBeLessThan(girth(yoke.sheet, 0) * 0.5);
+    expect(yoke.sheet.at(0.25, R)[1]).toBeGreaterThan(L.topY + 8);
+    // 콧수는 둘레를 따라 줄어듦
+    expect(yoke.rowStitches[R - 1]!).toBeLessThan(yoke.rowStitches[0]! * 0.5);
+  });
+
+  it('모자·한 장짜리 판에는 예상 요크가 없음', () => {
+    const hat = convertPattern(parsePattern(SAMPLE_BEANIE), { size: '성인', myGauge: { st: 22, row: 30 } });
+    const H = drape(hat.pieces.map((piece) => ({ piece, completedRows: 0, gauge: { st: 22, row: 30 } })));
+    expect(H.impliedYoke).toBeNull();
+    expect(H.sheets.size).toBe(1);
+  });
+});
