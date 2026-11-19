@@ -4,6 +4,8 @@ import type { WorkData } from '../api';
 import { artPieces, drawAssembled, type ArtPiece } from '../closet/assembledArt';
 import { convertedPiece, expectedLengthCm, formatHours, overall, pieceStitchProgress, remainingMinutes } from '../derive';
 import { PatternBoard } from '../sim/PatternBoard';
+import { BodyPicker } from '../sim/BodyPicker';
+import { useBody } from '../sim/bodyPref';
 import { pct } from '../ui';
 
 const GarmentViewer = lazy(() => import('../sim/GarmentViewer'));
@@ -37,6 +39,7 @@ function Flat({ pieces, data, activeId }: { pieces: ArtPiece[]; data: WorkData; 
 export function Compare({ data, snapshots, activePieceId, onPick }: Props) {
   const all = overall(data, snapshots);
   const pieces = useMemo(() => artPieces(data, snapshots), [data, snapshots]);
+  const [body, setBody] = useBody(data.project.profileId);
   const convId = convertedPiece(data, activePieceId)?.id;
   const pickConv = (cid: string) => {
     const st = data.pieces.find((p) => convertedPiece(data, p.id)?.id === cid);
@@ -57,8 +60,9 @@ export function Compare({ data, snapshots, activePieceId, onPick }: Props) {
       <div className="cmp-art">
         <div className="cmp-3d" aria-label={`전체 ${pct(all.ratio)} 완성. 진한 부분이 실제로 뜬 곳, 반투명한 부분이 남은 곳`}>
           <Suspense fallback={flat}>
-            <GarmentViewer pieces={pieces} palette={data.converted.palette} activeId={convId} onPick={pickConv} fallback={flat} />
+            <GarmentViewer pieces={pieces} palette={data.converted.palette} activeId={convId} onPick={pickConv} body={body} fallback={flat} />
           </Suspense>
+          <BodyPicker value={body} onChange={setBody} className="cmp-body" />
           <p className="cmp-legend">
             <span className="sw solid" /> 뜬 단 <span className="sw ghost" /> 남은 단 <i>·</i> 드래그해서 돌려 보기
           </p>

@@ -67,12 +67,13 @@ export class Viewer {
 
   set(pieces: ArtPiece[], palette: Palette, opts: ModelOptions) {
     this.last = { pieces, palette, opts };
+    const kind = opts.body ?? 'female';
     // 천 시뮬레이션이 아직이면 지금 모양으로 먼저 보여 주고, 끝나면 늘어뜨린 모양으로 바꿈
-    if (!clothDraped(pieces)) {
-      const key = shapeKey(pieces);
+    if (!clothDraped(pieces, kind)) {
+      const key = shapeKey(pieces, kind);
       this.onSettling?.(true);
-      void ensureCloth(pieces).then(() => {
-        if (!this.last || shapeKey(this.last.pieces) !== key || this.disposed) return;
+      void ensureCloth(pieces, kind).then(() => {
+        if (!this.last || shapeKey(this.last.pieces, this.last.opts.body ?? 'female') !== key || this.disposed) return;
         this.onSettling?.(false);
         this.set(this.last.pieces, this.last.palette, this.last.opts);
       });
@@ -85,17 +86,17 @@ export class Viewer {
     this.model = next;
     if (!next) return;
     this.stage.scene.add(next.group);
-    // 다른 옷(조각 구성·크기)이 오면 카메라를 다시 맞춤. +1만 했으면 보던 각도 그대로
-    const key = JSON.stringify([pieces.map((p) => [p.piece.id, p.piece.rows.length, p.gauge.st, p.gauge.row]), opts.mannequin]);
-    const box = new THREE.Box3().setFromObject(next.group);
-    this.stage.fit(box);
+    // 다른 옷(조각 구성·크기)이나 다른 몸이면 카메라를 다시 맞춤. +1만 했으면 보던 각도 그대로
+    const key = JSON.stringify([pieces.map((p) => [p.piece.id, p.piece.rows.length, p.gauge.st, p.gauge.row]), kind]);
+    this.stage.fit(new THREE.Box3().setFromObject(next.group));
     if (key !== this.shapeKey) {
       this.shapeKey = key;
-      const { center } = frameCamera(this.camera, box, 0.5, 0.12, 1.02);
+      // 옷과 머리를 담고 (다리·받침은 아래로 빠져도 됨), 뒤로 물러나면 전신이 보임
+      const { center } = frameCamera(this.camera, next.focus, 0.5, 0.12, 1.02);
       this.controls.target.copy(center);
       const d = this.camera.position.distanceTo(center);
-      this.controls.minDistance = d * 0.45;
-      this.controls.maxDistance = d * 1.5;
+      this.controls.minDistance = d * 0.4;
+      this.controls.maxDistance = d * 2.2;
       this.controls.update();
     }
   }

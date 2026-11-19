@@ -48,10 +48,10 @@ describe('천 시뮬레이션', () => {
     for (const v of out.ao[0]!) expect(v).toBeGreaterThanOrEqual(0);
   });
 
-  it('스웨터: 요크가 어깨에 걸려 옷이 흘러내리지 않고, 고무단은 몸판보다 오므라듦', () => {
+  it.each(['female', 'male'] as const)('스웨터 (%s): 요크가 어깨에 걸려 옷이 흘러내리지 않고, 고무단은 몸에 붙음', (kind) => {
     const conv = convertPattern(parsePattern(SAMPLE_PATTERN), { size: 'M', myGauge: { st: 25, row: 33 } });
     const pieces = conv.pieces.map((piece) => ({ piece, completedRows: 0, gauge: { st: 25, row: 33 } }));
-    const plan = planCloth(pieces)!;
+    const plan = planCloth(pieces, kind)!;
     expect(plan).not.toBeNull();
     expect(plan.input.seams.length).toBeGreaterThan(40);
     // 요크가 있으니 아무것도 고정하지 않음 (어깨가 받침)
@@ -63,11 +63,12 @@ describe('천 시뮬레이션', () => {
     const after = out.pos[bi]!;
     // 밑단 높이가 몇 cm 안에서 그대로 (흘러내리지 않음)
     expect(Math.abs(ringY(after, body, 0) - ringY(body.pos, body, 0))).toBeLessThan(3);
-    // 고무단(밑단)은 몸통 가운데보다 좁게
     const hem = ringGirth(after, body, 0);
     const mid = ringGirth(after, body, body.rings >> 1);
-    expect(hem).toBeLessThan(mid * 0.95);
     expect(hem).toBeGreaterThan(mid * RIB_REST * 0.9);
+    // 남자는 엉덩이가 가슴보다 좁아 고무단이 오므라들고, 여자는 엉덩이에 걸쳐 붙음 (풍선처럼 벌어지지 않음)
+    if (kind === 'male') expect(hem).toBeLessThan(mid * 0.95);
+    else expect(hem).toBeLessThan(mid * 1.12);
   }, 30000);
 
   it('비니는 머리에 씌운 채로 있음 (위로 빠지지 않음)', () => {

@@ -1,5 +1,4 @@
-import type { ArtPiece } from '../closet/assembledArt';
-import type { Layout, Ring, SimRole, Tube } from './shape';
+import type { Layout, Ring, Tube } from './shape';
 
 /**
  * 마네킹 모양 (three.js 없이 숫자만). 옷이 마네킹 위에 얹히도록 옷 쪽 계산(drape)에서도 씀.
@@ -81,74 +80,4 @@ export function torsoReach(rings: Ring[], theta: number, y: number): number {
     return (rx * rz) / Math.hypot(rz * Math.cos(theta), rx * Math.sin(theta));
   }
   return 0;
-}
-
-/** 옷보다 살짝 작게 줄인 고리 (마네킹이 옷 밖으로 나오지 않게) */
-export function fitted(keys: Ring[], limit?: (y: number) => [number, number] | null): Ring[] {
-  const rings = smoothKeys(keys);
-  if (!limit) return rings;
-  return rings.map((r) => {
-    const c = limit(r.t);
-    return c ? { t: r.t, rx: Math.min(r.rx, c[0] * 0.94), rz: Math.min(r.rz, c[1] * 0.92) } : r;
-  });
-}
-
-function findRole(L: Layout, r: SimRole): ArtPiece | undefined {
-  return [...L.roles].find(([, x]) => x === r)?.[0];
-}
-
-/** 마네킹 몸통: 옷(몸판, 앞뒤판) 안에 들어가게 맞춘 고리 */
-export function torsoFitted(L: Layout, tubes: Map<ArtPiece, Tube>): Ring[] {
-  const body = findRole(L, 'body') ?? findRole(L, 'front');
-  const back = findRole(L, 'back');
-  const bodyTube = body ? tubes.get(body) : undefined;
-  const backTube = back ? tubes.get(back) : undefined;
-  const limit = (y: number): [number, number] | null => {
-    const a = bodyTube ? radiusAt(bodyTube, y) : null;
-    const b = backTube ? radiusAt(backTube, y) : null;
-    return a && b ? [Math.min(a[0], b[0]), Math.min(a[1], b[1])] : a;
-  };
-  return fitted(torsoKeys(L), limit);
-}
-
-/** 마네킹 팔 (소매 축을 따라, 소매 안에 들어가게). t = 소매 축 위치 */
-export function armFitted(tube: Tube): Ring[] {
-  const sorted = [...tube.rings].sort((a, b) => a.t - b.t);
-  const last = sorted[sorted.length - 1]!;
-  const keys: Ring[] = [
-    { t: -9, rx: 0.2, rz: 0.2 },
-    { t: -7.5, rx: 2.1, rz: 1.6 },
-    { t: -4, rx: 2.4, rz: 1.9 },
-    ...[0.05, 0.3, 0.55, 0.8, 0.98].map((f) => {
-      const r = sorted[Math.round(f * (sorted.length - 1))]!;
-      return { t: r.t, rx: r.rx * 0.76, rz: r.rz * 0.74 };
-    }),
-    { t: tube.length + 2.5, rx: last.rx * 0.7, rz: last.rz * 0.68 },
-    { t: tube.length + 4.5, rx: 0.3, rz: 0.3 },
-  ];
-  return fitted(keys, (y) => radiusAt(tube, y));
-}
-
-/** 모자 받침의 머리 (모자 안에 들어가게): 위는 모자가 씌워진 타원, 아래(턱)는 조금 길게 */
-export function headFitted(L: Layout, hatTube: Tube): Ring[] {
-  const { rh, rv, rz, cy } = L.head!;
-  const head: Ring[] = [];
-  for (let i = 0; i <= 14; i++) {
-    const ang = -Math.PI / 2 + (Math.PI * i) / 14;
-    const v = ang < 0 ? rv * 1.12 : rv;
-    head.push({ t: cy + Math.sin(ang) * v, rx: Math.max(0.05, Math.cos(ang) * rh), rz: Math.max(0.05, Math.cos(ang) * rz) });
-  }
-  return fitted(head, (y) => radiusAt(hatTube, y));
-}
-
-/** 모자 받침의 목 */
-export function standNeck(L: Layout): Ring[] {
-  const { rh, rv, cy } = L.head!;
-  const ny = cy - rv * 0.86;
-  return fitted([
-    { t: ny - 13, rx: rh * 0.32, rz: rh * 0.32 },
-    { t: ny - 8, rx: rh * 0.36, rz: rh * 0.36 },
-    { t: ny - 4, rx: rh * 0.5, rz: rh * 0.55 },
-    { t: ny + 3, rx: rh * 0.5, rz: rh * 0.56 },
-  ]);
 }

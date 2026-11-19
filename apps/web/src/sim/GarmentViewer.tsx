@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { Palette } from '@knitcloset/knit-render';
 import type { ArtPiece } from '../closet/assembledArt';
+import type { BodyKind } from './body';
 import { Viewer } from './viewer';
 
 type Props = {
@@ -10,13 +11,15 @@ type Props = {
   activeId?: string;
   onPick?: (convertedPieceId: string) => void;
   mannequin?: boolean;
+  /** 입힐 몸 (여자·남자) */
+  body?: BodyKind;
   className?: string;
   /** WebGL을 못 쓰는 기기에서 대신 보여 줄 것 */
   fallback?: ReactNode;
 };
 
 /** 3D 조립 시뮬레이션. 드래그해서 돌려 보고, 조각을 누르면 그 조각을 골라요 */
-export default function GarmentViewer({ pieces, palette, activeId, onPick, mannequin = true, className, fallback }: Props) {
+export default function GarmentViewer({ pieces, palette, activeId, onPick, mannequin = true, body = 'female', className, fallback }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const viewer = useRef<Viewer | null>(null);
   const pick = useRef(onPick);
@@ -40,11 +43,11 @@ export default function GarmentViewer({ pieces, palette, activeId, onPick, manne
 
   useEffect(() => {
     try {
-      viewer.current?.set(pieces, palette, { mannequin, activeId });
+      viewer.current?.set(pieces, palette, { mannequin, activeId, body });
     } catch {
       setFailed(true);
     }
-  }, [pieces, palette, activeId, mannequin]);
+  }, [pieces, palette, activeId, mannequin, body]);
 
   if (failed) return <>{fallback ?? null}</>;
   return (

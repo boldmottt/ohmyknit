@@ -1,12 +1,14 @@
 import * as THREE from 'three';
 import type { Palette } from '@knitcloset/knit-render';
 import type { ArtPiece } from '../closet/assembledArt';
+import type { BodyKind } from './body';
 import { ensureCloth } from './drapeSim';
 import { buildEmptyForm, buildModel, frameCamera, makeStage, TexCache } from './scene';
 
 /**
  * 옷장에 걸 3D 정지 그림. 렌더러 하나를 돌려 쓰며 옷마다 한 장씩 찍어요 (WebGL 창을 여러 개 만들지 않게).
- * 같은 진행 상태면 다시 찍지 않습니다. WebGL이 없으면 null → 2D 그림을 씀.
+ * 같은 진행 상태·같은 몸이면 다시 찍지 않습니다. WebGL이 없으면 null → 2D 그림을 씀.
+ * 머리부터 옷 밑단 조금 아래까지 담고, 다리·받침은 잘려도 돼요 (옷장에서 아래가 흐려짐).
  */
 export const STILL_W = 560;
 export const STILL_H = 500;
@@ -32,16 +34,31 @@ function getRig(): Rig | null {
   return rig;
 }
 
-export function stillKey(id: string, pieces: ArtPiece[], palette: Palette) {
-  return `${id}|${palette.map((c) => c.hex).join('')}|${pieces.map((p) => `${p.piece.id}:${p.piece.rows.length}:${p.completedRows}.${p.currentStitch ?? 0}:${p.gauge.st}x${p.gauge.row}`).join(',')}`;
+export function stillKey(id: string, pieces: ArtPiece[], palette: Palette, kind: BodyKind = 'female') {
+  return `${kind}|${id}|${palette.map((c) => c.hex).join('')}|${pieces.map((p) => `${p.piece.id}:${p.piece.rows.length}:${p.completedRows}.${p.currentStitch ?? 0}:${p.gauge.st}x${p.gauge.row}`).join(',')}`;
 }
 
 export function cachedStill(key: string) {
   return done.get(key);
 }
 
+function shoot(r: Rig, group: THREE.Object3D, focus: THREE.Box3, key: string): string {
+  r.stage.scene.add(group);
+  try {
+    r.stage.fit(new THREE.Box3().setFromObject(group));
+    frameCamera(r.camera, focus, 0.42, 0.08, 1.0, 86);
+    r.renderer.render(r.stage.scene, r.camera);
+    const url = r.renderer.domElement.toDataURL('image/webp', 0.9);
+    if (done.size > 60) done.clear();
+    done.set(key, url);
+    return url;
+  } finally {
+    r.stage.scene.remove(group);
+  }
+}
+
 /** 한 번에 한 장씩 차례로 찍음 */
-export function renderStill(key: string, pieces: ArtPiece[], palette: Palette): Promise<string | null> {
+export function renderStill(key: string, pieces: ArtPiece[], palette: Palette, kind: BodyKind = 'female'): Promise<string | null> {
   const hit = done.get(key);
   if (hit) return Promise.resolve(hit);
   const job = queue.then(async () => {
@@ -49,21 +66,12 @@ export function renderStill(key: string, pieces: ArtPiece[], palette: Palette): 
     const r = getRig();
     if (!r) return null;
     // 천이 다 늘어진 모양으로 찍음 (계산은 워커에서, 한 번 하면 기억)
-    await ensureCloth(pieces);
-    const model = buildModel(pieces, palette, r.tex, { mannequin: true });
+    await ensureCloth(pieces, kind);
+    const model = buildModel(pieces, palette, r.tex, { mannequin: true, body: kind });
     if (!model) return null;
     try {
-      r.stage.scene.add(model.group);
-      const box = new THREE.Box3().setFromObject(model.group);
-      r.stage.fit(box);
-      frameCamera(r.camera, box, 0.42, 0.08, 1.0, 86);
-      r.renderer.render(r.stage.scene, r.camera);
-      const url = r.renderer.domElement.toDataURL('image/webp', 0.9);
-      if (done.size > 60) done.clear();
-      done.set(key, url);
-      return url;
+      return shoot(r, model.group, model.focus, key);
     } finally {
-      r.stage.scene.remove(model.group);
       model.dispose();
     }
   });
@@ -71,33 +79,17 @@ export function renderStill(key: string, pieces: ArtPiece[], palette: Palette): 
   return job.catch(() => null);
 }
 
-/** 새 작품 자리: 빈 마네킹 한 장 */
-export function renderEmptyStill(): Promise<string | null> {
-  const key = 'empty-form';
+/** 새 작품 자리: 아무것도 안 입은 마네킹 한 장 */
+export function renderEmptyStill(kind: BodyKind = 'female'): Promise<string | null> {
+  const key = `empty-form|${kind}`;
   const hit = done.get(key);
   if (hit) return Promise.resolve(hit);
   const job = queue.then(async () => {
     const r = getRig();
     if (!r) return null;
-    const g = buildEmptyForm();
-    try {
-      r.stage.scene.add(g);
-      const box = new THREE.Box3().setFromObject(g);
-      r.stage.fit(box);
-      frameCamera(r.camera, box, 0.42, 0.08, 1.0, 86);
-      r.renderer.render(r.stage.scene, r.camera);
-      const url = r.renderer.domElement.toDataURL('image/webp', 0.9);
-      done.set(key, url);
-      return url;
-    } finally {
-      r.stage.scene.remove(g);
-      g.traverse((o) => {
-        if (o instanceof THREE.Mesh) {
-          o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
-        }
-      });
-    }
+    // 마네킹 도형은 캐시가 갖고 있어서 여기서 버리지 않음
+    const { group, focus } = buildEmptyForm(kind);
+    return shoot(r, group, focus, key);
   });
   queue = job.catch(() => null);
   return job.catch(() => null);

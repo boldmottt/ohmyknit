@@ -1,8 +1,7 @@
 import type { ArtPiece } from '../closet/assembledArt';
-import { bakeCloth, occlusionAt, OCC_FORM, simulate, type ClothInput, type ClothOutput, type ClothPanel, type Collider, type Occupancy, type Seam, type Vec3 } from './cloth';
+import { bakeCloth, occlusionAt, OCC_FORM, separate, simulate, type ClothInput, type ClothOutput, type ClothPanel, type Collider, type Occupancy, type Seam, type Vec3 } from './cloth';
 import { drape, girth, type Draped, type Sheet } from './drape';
-import { armFitted, headFitted, standNeck, torsoFitted } from './form';
-import type { SimRole } from './shape';
+import { bodyOf, loftReach, type BodyKind, type BodyModel, type Limb } from './body';
 
 /**
  * 입힌 모양(drape) → 천 시뮬레이션 → 다시 그릴 수 있는 면.
@@ -30,11 +29,28 @@ export type ClothPlan = {
   rows: number[];
 };
 
-/** 조각 모양을 정하는 것만 모은 열쇠 (진행 상태와 무관) */
-export function shapeKey(pieces: ArtPiece[]): string {
-  return JSON.stringify(
+/** 조각 모양과 입힐 몸을 정하는 것만 모은 열쇠 (진행 상태와 무관) */
+export function shapeKey(pieces: ArtPiece[], kind: BodyKind = 'female'): string {
+  return JSON.stringify([
+    kind,
     pieces.map((p) => [p.piece.id, p.piece.name, p.piece.construction, p.piece.direction, p.piece.rows.length, p.piece.totalStitches, p.gauge.st, p.gauge.row]),
-  );
+  ]);
+}
+
+/** 입힐 몸에 맞춘 입힌 모양 (요크가 그 몸의 어깨·목에 얹힘) */
+export function drapeFor(pieces: ArtPiece[], kind: BodyKind, wrinkles = false): Draped {
+  return drape(pieces, {
+    wrinkles,
+    body: (L, tubes, axes) => {
+      const b = bodyOf(kind, L, tubes, axes);
+      return b?.torso ? { reach: (theta, y) => loftReach(b.torso!, theta, y), neck: b.neck } : null;
+    },
+  });
+}
+
+/** 입힌 모양의 마네킹 */
+export function bodyOfDraped(D: Draped, kind: BodyKind): BodyModel | null {
+  return bodyOf(kind, D.layout, D.tubes, D.axes);
 }
 
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -186,58 +202,58 @@ function colEdge(p: ClothPanel, col: number) {
   return { pts, idx };
 }
 
-/** 마네킹을 부딪힘 모양으로 */
-function colliders(D: Draped): Collider[] {
-  const L = D.layout;
+/** 마네킹을 부딪힘 모양으로: 몸통·머리는 단면 쌓기, 팔·허벅지·받침 목은 굵기가 변하는 관 */
+export function bodyColliders(b: BodyModel, hat: boolean): Collider[] {
   const out: Collider[] = [];
-  const find = (r: SimRole) => [...L.roles].find(([, x]) => x === r)?.[0];
-  if (L.isHat && L.head) {
-    const hat = find('hat')!;
-    const head = headFitted(L, D.tubes.get(hat)!);
-    out.push({ kind: 'lathe', t: head.map((r) => r.t), rx: head.map((r) => r.rx), rz: head.map((r) => r.rz), margin: 0.35, friction: 0.95 });
-    const neck = standNeck(L);
-    out.push({ kind: 'lathe', t: neck.map((r) => r.t), rx: neck.map((r) => r.rx), rz: neck.map((r) => r.rz), margin: 0.3, friction: 0.5 });
-    return out;
-  }
-  const torso = torsoFitted(L, D.tubes);
-  out.push({ kind: 'lathe', t: torso.map((r) => r.t), rx: torso.map((r) => r.rx), rz: torso.map((r) => r.rz), margin: 0.45, friction: 0.7 });
-  for (const side of ['sleeveL', 'sleeveR'] as const) {
-    const s = find(side);
-    const tube = s ? D.tubes.get(s) : undefined;
-    const axis = s ? D.axes.get(s) : undefined;
-    if (!tube || !axis) continue;
-    const arm = armFitted(tube);
-    const p: number[] = [];
-    const r: number[] = [];
-    const t0 = arm[0]!.t;
-    const t1 = arm[arm.length - 1]!.t;
-    const steps = Math.max(8, Math.ceil((t1 - t0) / 1.6));
-    for (let i = 0; i <= steps; i++) {
-      const t = t0 + ((t1 - t0) * i) / steps;
-      let a = arm[0]!;
-      let b = arm[arm.length - 1]!;
-      for (let q = 0; q < arm.length - 1; q++) {
-        if (t >= arm[q]!.t && t <= arm[q + 1]!.t) {
-          a = arm[q]!;
-          b = arm[q + 1]!;
-          break;
-        }
-      }
-      const f = b.t > a.t ? (t - a.t) / (b.t - a.t) : 0;
-      const rad = ((a.rx + (b.rx - a.rx) * f + a.rz + (b.rz - a.rz) * f) / 2) * 1.0;
-      p.push(...axis.at(t).p);
-      r.push(Math.max(0.2, rad));
-    }
-    out.push({ kind: 'tube', p, r, margin: 0.4, friction: 0.5 });
-  }
+  if (b.torso) out.push({ kind: 'loft', y: b.torso.y, cx: b.torso.cx, cz: b.torso.cz, A: b.torso.A, r: b.torso.r, margin: 0.45, friction: 0.7 });
+  out.push({ kind: 'loft', y: b.head.y, cx: b.head.cx, cz: b.head.cz, A: b.head.A, r: b.head.r, margin: hat ? 0.35 : 0.4, friction: hat ? 0.95 : 0.6 });
+  for (const limb of [...b.arms, ...b.hands, ...b.limbs]) out.push(...limbColliders(limb, hat ? 0.3 : 0.4, 0.5));
   return out;
 }
 
+/**
+ * 팔·손·허벅지 → 관. 납작한 손은 앞뒤로 나란한 관 세 줄 (둥근 관 하나로 감싸면
+ * 손등 위에 헛벽이 생겨 그늘이 얼룩지고, 소맷부리가 손 옆을 뚫고 지나갈 수 있어요)
+ */
+function limbColliders(limb: Limb, margin: number, friction: number): Collider[] {
+  const t0 = limb.rings[0]!.t;
+  const t1 = limb.rings[limb.rings.length - 1]!.t;
+  const steps = Math.max(8, Math.ceil(Math.abs(t1 - t0) / 1.5));
+  const at: { p: Vec3; z: Vec3; rx: number; rz: number }[] = [];
+  let q = 0;
+  let flat = false;
+  for (let i = 0; i <= steps; i++) {
+    const t = t0 + ((t1 - t0) * i) / steps;
+    while (q < limb.rings.length - 2 && limb.rings[q + 1]!.t < t) q++;
+    const a = limb.rings[q]!;
+    const c = limb.rings[q + 1] ?? a;
+    const f = c.t > a.t ? Math.max(0, Math.min(1, (t - a.t) / (c.t - a.t))) : 0;
+    const rx = a.rx + (c.rx - a.rx) * f;
+    const rz = a.rz + (c.rz - a.rz) * f;
+    const fr = limb.axis.at(t);
+    at.push({ p: fr.p, z: fr.z, rx, rz });
+    if (rz - rx > 0.8) flat = true;
+  }
+  if (!flat) return [{ kind: 'tube', p: at.flatMap((s) => s.p), r: at.map((s) => Math.max(0.2, (s.rx + s.rz) / 2)), margin, friction }];
+  return [-1, 0, 1].map((side) => ({
+    kind: 'tube' as const,
+    p: at.flatMap((s) => {
+      const o = Math.max(0, s.rz - s.rx) * 0.92 * side;
+      return [s.p[0] + s.z[0] * o, s.p[1] + s.z[1] * o, s.p[2] + s.z[2] * o];
+    }),
+    r: at.map((s) => Math.max(0.2, s.rx)),
+    margin,
+    friction,
+  }));
+}
+
 /** 시뮬레이션 입력 만들기. 판(스카프 같은 한 장)은 아직 시뮬레이션하지 않아요 */
-export function planCloth(pieces: ArtPiece[]): ClothPlan | null {
-  const D = drape(pieces, { wrinkles: false });
+export function planCloth(pieces: ArtPiece[], kind: BodyKind = 'female'): ClothPlan | null {
+  const D = drapeFor(pieces, kind);
   const roles = D.layout.roles;
   if ([...roles.values()].includes('panel') || D.sheets.size === 0) return null;
+  const body = bodyOfDraped(D, kind);
+  if (!body) return null;
   const panels: ClothPanel[] = [];
   const owners: Owner[] = [];
   const rows: number[] = [];
@@ -340,7 +356,10 @@ export function planCloth(pieces: ArtPiece[]): ClothPlan | null {
     seams.push(...stitchEdges({ off: offsets[fi]!, ...colEdge(f, f.cols - 1) }, { off: offsets[bi]!, ...colEdge(b, 0) }, 4));
     seams.push(...stitchEdges({ off: offsets[fi]!, ...colEdge(f, 0) }, { off: offsets[bi]!, ...colEdge(b, b.cols - 1) }, 4));
   }
-  return { key: shapeKey(pieces), input: { panels, seams, colliders: colliders(D), seed: 11 }, owners, rows };
+  const cols = bodyColliders(body, D.layout.isHat);
+  // 몸이 옷보다 나온 곳(가슴·어깨·엉덩이)은 출발 모양을 몸 밖으로 밀어 둠
+  separate(panels, cols);
+  return { key: shapeKey(pieces, kind), input: { panels, seams, colliders: cols, seed: 11 }, owners, rows };
 }
 
 /* ───────── 결과를 면으로 ───────── */
@@ -439,8 +458,8 @@ export function withOcclusion(sheet: Sheet, occ: Occupancy): Sheet {
 }
 
 /** 시뮬레이션 결과를 입힌 모양에 반영 (조각 면을 늘어뜨린 면으로 바꿈) */
-export function applyCloth(pieces: ArtPiece[], plan: ClothPlan, out: ClothOutput): Draped {
-  const D = drape(pieces, { wrinkles: false });
+export function applyCloth(pieces: ArtPiece[], kind: BodyKind, plan: ClothPlan, out: ClothOutput): Draped {
+  const D = drapeFor(pieces, kind);
   const byId = new Map(pieces.map((p) => [p.piece.id, p]));
   plan.owners.forEach((o, i) => {
     const panel = plan.input.panels[i]!;
@@ -494,22 +513,22 @@ function run(input: ClothInput): Promise<ClothOutput> {
 }
 
 /** 이미 늘어뜨린 모양이 있으면 그것으로 입힌 모양 (없으면 null) */
-export function clothDraped(pieces: ArtPiece[]): Draped | null {
-  const hit = done.get(shapeKey(pieces));
-  return hit ? applyCloth(pieces, hit.plan, hit.out) : null;
+export function clothDraped(pieces: ArtPiece[], kind: BodyKind = 'female'): Draped | null {
+  const hit = done.get(shapeKey(pieces, kind));
+  return hit ? applyCloth(pieces, kind, hit.plan, hit.out) : null;
 }
 
 /** 계산 방식이 바뀌면 올려서 예전에 저장한 모양을 쓰지 않게 */
-const CLOTH_VERSION = 4;
+const CLOTH_VERSION = 6;
 
 /** 늘어뜨린 모양을 계산해 둠 (이미 했거나 하는 중이면 그대로). 한 번 계산한 모양은 기기에 저장 */
-export function ensureCloth(pieces: ArtPiece[]): Promise<boolean> {
-  const key = shapeKey(pieces);
+export function ensureCloth(pieces: ArtPiece[], kind: BodyKind = 'female'): Promise<boolean> {
+  const key = shapeKey(pieces, kind);
   if (done.has(key)) return Promise.resolve(!!done.get(key));
   let job = pending.get(key);
   if (!job) {
     job = (async (): Promise<Done | null> => {
-      const plan = planCloth(pieces);
+      const plan = planCloth(pieces, kind);
       if (!plan) return null;
       const store = `${CLOTH_VERSION}|${key}`;
       const saved = await loadCloth(store);

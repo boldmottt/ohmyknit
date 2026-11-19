@@ -4,6 +4,7 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { api, onOfflineData, type Profile, type ProjectSummary, type WorkData } from '../api';
 import { garmentArt } from '../closet/garmentArt';
 import { artPieces, outlineArt, workArtUrl } from '../closet/assembledArt';
+import { useBody } from '../sim/bodyPref';
 
 const SimSheet = lazy(() => import('../closet/SimSheet'));
 import { cacheWork, cachedWork } from '../offline';
@@ -258,20 +259,21 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
     const url = workArtUrl(w.data);
     if (url) artById.set(w.data.project.id, url);
   }
-  // 패턴판을 마네킹에 입힌 3D 정지 그림 (WebGL이 없으면 위의 2D 그림 그대로)
+  // 패턴판을 마네킹에 입힌 3D 정지 그림 (WebGL이 없으면 위의 2D 그림 그대로). 마네킹 몸은 옷장 주인마다 고른 대로
+  const [bodyKind] = useBody(profile.id);
   const [stills, setStills] = useState<Record<string, string>>({});
   const workSig = works.map((w) => (w.data ? `${w.data.project.id}:${w.dataUpdatedAt}` : '')).join('|');
   useEffect(() => {
     const list = works.map((w) => w.data).filter((d): d is WorkData => !!d);
     let stop = false;
     void import('../sim/stills').then(async (m) => {
-      const empty = await m.renderEmptyStill();
+      const empty = await m.renderEmptyStill(bodyKind);
       if (empty && !stop) setStills((s) => (s.__new === empty ? s : { ...s, __new: empty }));
       for (const d of list) {
         if (stop) return;
         const pieces = artPieces(d);
-        const key = m.stillKey(d.project.id, pieces, d.converted.palette);
-        const url = m.cachedStill(key) ?? (await m.renderStill(key, pieces, d.converted.palette));
+        const key = m.stillKey(d.project.id, pieces, d.converted.palette, bodyKind);
+        const url = m.cachedStill(key) ?? (await m.renderStill(key, pieces, d.converted.palette, bodyKind));
         if (stop) return;
         if (url) setStills((s) => (s[d.project.id] === url ? s : { ...s, [d.project.id]: url }));
       }
@@ -280,7 +282,7 @@ function Rail({ profile, returned }: { profile: Profile; returned?: string }) {
       stop = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workSig]);
+  }, [workSig, bodyKind]);
   const [sim, setSim] = useState<string | null>(null);
   const simData = sim ? workById.get(sim) : undefined;
 

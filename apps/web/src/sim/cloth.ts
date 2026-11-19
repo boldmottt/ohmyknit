@@ -39,7 +39,9 @@ export type Collider =
   /** 굵기가 변하는 관 (팔, 목) */
   | { kind: 'tube'; p: number[]; r: number[]; margin: number; friction: number }
   /** 타원체 (머리) */
-  | { kind: 'ellipsoid'; c: Vec3; r: Vec3; margin: number; friction: number };
+  | { kind: 'ellipsoid'; c: Vec3; r: Vec3; margin: number; friction: number }
+  /** 높이마다 각도별 반지름을 가진 단면 쌓기 (사람 몸통·머리). r은 단면 × A */
+  | { kind: 'loft'; y: number[]; cx: number[]; cz: number[]; A: number; r: number[]; margin: number; friction: number };
 
 /** 솔기: 전체 입자 번호 두 개 */
 export type Seam = [number, number];
@@ -175,9 +177,54 @@ type Prepared =
       friction: number;
     }
   | { kind: 'tube'; p: Float64Array; r: Float64Array; lo: Vec3; hi: Vec3; bc: Float64Array; br2: Float64Array; margin: number; friction: number }
-  | { kind: 'ellipsoid'; c: Vec3; r: Vec3; margin: number; friction: number };
+  | { kind: 'ellipsoid'; c: Vec3; r: Vec3; margin: number; friction: number }
+  | {
+      kind: 'loft';
+      y: Float64Array;
+      cx: Float64Array;
+      cz: Float64Array;
+      r: Float64Array;
+      A: number;
+      yMin: number;
+      yMax: number;
+      rMax: number;
+      /** 높이 근처(앞뒤 몇 단면)에서 가장 바깥까지의 거리: 멀리 떨어진 점은 바로 건너뜀 */
+      near: Float64Array;
+      margin: number;
+      friction: number;
+    };
 
 function prepare(c: Collider): Prepared {
+  if (c.kind === 'loft') {
+    let rMax = 0;
+    const n = c.y.length;
+    const ring = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const off = Math.hypot(c.cx[i]!, c.cz[i]!);
+      for (let a = 0; a < c.A; a++) ring[i] = Math.max(ring[i]!, c.r[i * c.A + a]! + off);
+      rMax = Math.max(rMax, ring[i]!);
+    }
+    const near = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      let m = 0;
+      for (let j = Math.max(0, i - 4); j <= Math.min(n - 1, i + 5); j++) m = Math.max(m, ring[j]!);
+      near[i] = m;
+    }
+    return {
+      kind: 'loft',
+      y: Float64Array.from(c.y),
+      cx: Float64Array.from(c.cx),
+      cz: Float64Array.from(c.cz),
+      r: Float64Array.from(c.r),
+      A: c.A,
+      yMin: c.y[0]!,
+      yMax: c.y[n - 1]!,
+      rMax,
+      near,
+      margin: c.margin,
+      friction: c.friction,
+    };
+  }
   if (c.kind === 'lathe') {
     const order = c.t.map((_, i) => i).sort((a, b) => c.t[a]! - c.t[b]!);
     const t = Float64Array.from(order.map((i) => c.t[i]!));
@@ -214,8 +261,116 @@ function prepare(c: Collider): Prepared {
   return c;
 }
 
-/** (x, y, z)가 몸 안이거나 너무 가까우면 바깥 자리를 out에 넣고 법선을 n에 넣어 true */
-function pushOut(c: Prepared, x: number, y: number, z: number, out: Float64Array, n: Float64Array): boolean {
+/** 빠른 atan2 (오차 0.0001라디안 이하): 몸 단면의 각도 칸(5도)을 고르는 데는 충분 */
+function atan2f(y: number, x: number): number {
+  const ax = Math.abs(x);
+  const ay = Math.abs(y);
+  const a = Math.min(ax, ay) / (Math.max(ax, ay) + 1e-12);
+  const s = a * a;
+  let r = ((-0.0464964749 * s + 0.15931422) * s - 0.327622764) * s * a + a;
+  if (ay > ax) r = 1.5707963268 - r;
+  if (x < 0) r = Math.PI - r;
+  return y < 0 ? -r : r;
+}
+
+/**
+ * (x, y, z)가 몸 안이거나 너무 가까우면 바깥 자리를 out에 넣고 법선을 n에 넣어 true.
+ * hint[idx]: 이 점이 지난번에 있던 단면 번호 (단면 쌓기에서 높이 찾기를 건너뜀)
+ */
+function pushOut(c: Prepared, x: number, y: number, z: number, out: Float64Array, n: Float64Array, hint?: Int32Array, idx = 0): boolean {
+  if (c.kind === 'loft') {
+    const m = c.margin;
+    if (y < c.yMin - m || y > c.yMax + m) return false;
+    const last = c.y.length - 2;
+    let lo = hint ? hint[idx]! : -1;
+    if (lo >= 0 && lo <= last) {
+      while (lo > 0 && c.y[lo]! > y) lo--;
+      while (lo < last && c.y[lo + 1]! <= y) lo++;
+    } else {
+      lo = 0;
+      let hi = c.y.length - 1;
+      while (hi - lo > 1) {
+        const mid = (lo + hi) >> 1;
+        if (c.y[mid]! <= y) lo = mid;
+        else hi = mid;
+      }
+    }
+    if (hint) hint[idx] = lo;
+    // 이 높이 근처에서 가장 바깥보다 멀면 바로 건너뜀 (헐렁한 옷은 대부분 여기서 끝)
+    if (x * x + z * z > (c.near[lo]! + m + 0.5) ** 2) return false;
+    const span = c.y[lo + 1]! - c.y[lo]!;
+    const fy = span > 1e-9 ? Math.max(0, Math.min(1, (y - c.y[lo]!) / span)) : 0;
+    const ccx = c.cx[lo]! + (c.cx[lo + 1]! - c.cx[lo]!) * fy;
+    const ccz = c.cz[lo]! + (c.cz[lo + 1]! - c.cz[lo]!) * fy;
+    const dx = x - ccx;
+    const dz = z - ccz;
+    const rho = Math.sqrt(dx * dx + dz * dz);
+    if (rho > c.rMax + m) return false;
+    const ct = rho > 1e-9 ? dx / rho : 1;
+    const st = rho > 1e-9 ? dz / rho : 0;
+    let ax = atan2f(st, ct) / (2 * Math.PI);
+    if (ax < 0) ax += 1;
+    ax *= c.A;
+    if (ax >= c.A) ax -= c.A;
+    const a0 = Math.floor(ax) % c.A;
+    const fa = ax - Math.floor(ax);
+    const a1 = (a0 + 1) % c.A;
+    // 단면 i의 겉면까지 거리 (이 점의 중심 기준)
+    const R = (i: number) => c.r[i * c.A + a0]! * (1 - fa) + c.r[i * c.A + a1]! * fa + (c.cx[i]! - ccx) * ct + (c.cz[i]! - ccz) * st;
+    const from = Math.max(0, lo - 3);
+    const to = Math.min(c.y.length - 2, lo + 3);
+    let best = Infinity;
+    let cr = 0;
+    let cy = 0;
+    let inside = false;
+    let rPrev = 0;
+    for (let i = from; i <= to; i++) {
+      const r0 = i === from ? R(i) : rPrev;
+      const r1 = R(i + 1);
+      rPrev = r1;
+      const t0 = c.y[i]!;
+      const t1 = c.y[i + 1]!;
+      const dr = r1 - r0;
+      const dt = t1 - t0;
+      const len2 = dr * dr + dt * dt;
+      const s = len2 > 1e-12 ? Math.max(0, Math.min(1, ((rho - r0) * dr + (y - t0) * dt) / len2)) : 0;
+      const pr = r0 + dr * s;
+      const py = t0 + dt * s;
+      const ex = rho - pr;
+      const ey = y - py;
+      const d2 = ex * ex + ey * ey;
+      if (d2 < best) {
+        best = d2;
+        cr = pr;
+        cy = py;
+      }
+      if (y >= t0 && y <= t1 && dt > 1e-9 && rho < r0 + (dr * (y - t0)) / dt) inside = true;
+    }
+    if (!inside && best >= m * m) return false;
+    let nr = rho - cr;
+    let ny = y - cy;
+    const l = Math.sqrt(nr * nr + ny * ny);
+    if (l < 1e-9) {
+      nr = 1;
+      ny = 0;
+    } else {
+      nr /= l;
+      ny /= l;
+    }
+    if (inside) {
+      nr = -nr;
+      ny = -ny;
+    }
+    const tr = cr + nr * m;
+    const ty = cy + ny * m;
+    out[0] = ccx + tr * ct;
+    out[1] = ty;
+    out[2] = ccz + tr * st;
+    n[0] = nr * ct;
+    n[1] = ny;
+    n[2] = nr * st;
+    return true;
+  }
   if (c.kind === 'lathe') {
     const m = c.margin;
     if (y < c.tMin - m || y > c.tMax + m) return false;
@@ -373,6 +528,38 @@ function pushOut(c: Prepared, x: number, y: number, z: number, out: Float64Array
   return true;
 }
 
+/**
+ * 출발 모양이 몸 안으로 파고든 곳(가슴·어깨처럼 옷보다 나온 곳)을 몸 밖으로 밀어 둠.
+ * 길이 제약이 나중에 다시 끌어당겨서, 옷이 몸에 걸쳐 감싸게 돼요.
+ */
+export function separate(panels: ClothPanel[], colliders: Collider[], extra = 0.35, passes = 3) {
+  const prep = colliders.map((c) => prepare({ ...c, margin: c.margin + extra }));
+  const out = new Float64Array(3);
+  const nrm = new Float64Array(3);
+  for (const p of panels) {
+    const n = p.cols * p.rings;
+    for (let i = 0; i < n; i++) {
+      let x = p.pos[i * 3]!;
+      let y = p.pos[i * 3 + 1]!;
+      let z = p.pos[i * 3 + 2]!;
+      for (let pass = 0; pass < passes; pass++) {
+        let moved = false;
+        for (const c of prep) {
+          if (!pushOut(c, x, y, z, out, nrm)) continue;
+          x = out[0]!;
+          y = out[1]!;
+          z = out[2]!;
+          moved = true;
+        }
+        if (!moved) break;
+      }
+      p.pos[i * 3] = x;
+      p.pos[i * 3 + 1] = y;
+      p.pos[i * 3 + 2] = z;
+    }
+  }
+}
+
 /* ───────── 시뮬레이션 ───────── */
 
 export function simulate(input: ClothInput): ClothOutput {
@@ -428,8 +615,13 @@ export function simulate(input: ClothInput): ClothOutput {
     }
   });
   const colliders = input.colliders.map(prepare);
+  const hints = colliders.map(() => new Int32Array(N).fill(-1));
   const out = new Float64Array(3);
   const nrm = new Float64Array(3);
+  // 마지막으로 닿은 마네킹과 그 자리의 법선: 부딪힘은 두 단계에 한 번 재지만 마찰은 매 단계 걸어요
+  // (안 그러면 마찰이 절반만 걸려 비니가 정수리로 올라가고 어깨에서 옷이 미끄러짐)
+  const touch = new Int16Array(N).fill(-1);
+  const tn = new Float32Array(N * 3);
   const dt = 1 / 60 / P.substeps;
   const steps = P.frames * P.substeps;
   let ok = true;
@@ -477,12 +669,36 @@ export function simulate(input: ClothInput): ClothOutput {
       x[b3 + 1] = x[b3 + 1]! + ny * wb;
       x[b3 + 2] = x[b3 + 2]! + nz * wb;
     }
-    // 마네킹: 밀어내고, 미끄러지는 만큼 마찰로 붙잡음
+    // 마네킹: 밀어내고, 미끄러지는 만큼 마찰로 붙잡음 (한 단계 움직임이 0.1mm도 안 돼서 밀어내기는 두 단계에 한 번)
+    const full = step % 2 === 0 || step === steps - 1;
     for (let i = 0; i < N; i++) {
       if (w[i] === 0) continue;
       const i3 = i * 3;
-      for (const col of colliders) {
-        if (!pushOut(col, x[i3]!, x[i3 + 1]!, x[i3 + 2]!, out, nrm)) continue;
+      if (!full) {
+        // 사이 단계: 지난번에 닿았던 면 그대로 마찰만 (면 안쪽으로는 못 들어가게)
+        const ci = touch[i]!;
+        if (ci < 0) continue;
+        const ox = prev[i3]!;
+        const oy = prev[i3 + 1]!;
+        const oz = prev[i3 + 2]!;
+        const mx = x[i3]! - ox;
+        const my = x[i3 + 1]! - oy;
+        const mz = x[i3 + 2]! - oz;
+        const n0 = tn[i3]!;
+        const n1 = tn[i3 + 1]!;
+        const n2 = tn[i3 + 2]!;
+        const dn = mx * n0 + my * n1 + mz * n2;
+        const dk = Math.max(0, dn);
+        const keepT = 1 - colliders[ci]!.friction;
+        x[i3] = ox + n0 * dk + (mx - n0 * dn) * keepT;
+        x[i3 + 1] = oy + n1 * dk + (my - n1 * dn) * keepT;
+        x[i3 + 2] = oz + n2 * dk + (mz - n2 * dn) * keepT;
+        continue;
+      }
+      touch[i] = -1;
+      for (let ci = 0; ci < colliders.length; ci++) {
+        const col = colliders[ci]!;
+        if (!pushOut(col, x[i3]!, x[i3 + 1]!, x[i3 + 2]!, out, nrm, hints[ci], i)) continue;
         const ox = prev[i3]!;
         const oy = prev[i3 + 1]!;
         const oz = prev[i3 + 2]!;
@@ -494,6 +710,10 @@ export function simulate(input: ClothInput): ClothOutput {
         x[i3] = ox + nrm[0]! * dn + (mx - nrm[0]! * dn) * keepT;
         x[i3 + 1] = oy + nrm[1]! * dn + (my - nrm[1]! * dn) * keepT;
         x[i3 + 2] = oz + nrm[2]! * dn + (mz - nrm[2]! * dn) * keepT;
+        touch[i] = ci;
+        tn[i3] = nrm[0]!;
+        tn[i3 + 1] = nrm[1]!;
+        tn[i3 + 2] = nrm[2]!;
       }
     }
     for (let i = 0; i < N * 3; i++) vel[i] = ((x[i]! - prev[i]!) / dt) * keep;
@@ -580,7 +800,33 @@ function occupancy(panels: ClothPanel[], pos: Float32Array[], colliders: Collide
   // 마네킹 겉면
   flag = 2;
   for (const c of colliders) {
-    if (c.kind === 'lathe') {
+    if (c.kind === 'loft') {
+      const rings = c.y.length;
+      const radius = (i: number, phi: number) => {
+        let ax = phi / (2 * Math.PI);
+        ax = (ax - Math.floor(ax)) * c.A;
+        const a0 = Math.floor(ax) % c.A;
+        const fa = ax - Math.floor(ax);
+        return c.r[i * c.A + a0]! * (1 - fa) + c.r[i * c.A + ((a0 + 1) % c.A)]! * fa;
+      };
+      for (let i = 0; i < rings - 1; i++) {
+        const steps = Math.max(1, Math.ceil(Math.abs(c.y[i + 1]! - c.y[i]!) / (CELL * 0.8)));
+        for (let s2 = 0; s2 <= steps; s2++) {
+          const f = s2 / steps;
+          const y = c.y[i]! + (c.y[i + 1]! - c.y[i]!) * f;
+          const cx = c.cx[i]! + (c.cx[i + 1]! - c.cx[i]!) * f;
+          const cz = c.cz[i]! + (c.cz[i + 1]! - c.cz[i]!) * f;
+          let rm = 0;
+          for (let a = 0; a < c.A; a++) rm = Math.max(rm, c.r[i * c.A + a]!);
+          const n = Math.max(16, Math.ceil((2 * Math.PI * rm) / (CELL * 0.8)));
+          for (let j = 0; j < n; j++) {
+            const phi = (2 * Math.PI * j) / n;
+            const r = radius(i, phi) * (1 - f) + radius(i + 1, phi) * f;
+            mark(cx + r * Math.cos(phi), y, cz + r * Math.sin(phi));
+          }
+        }
+      }
+    } else if (c.kind === 'lathe') {
       const order = c.t.map((_, i) => i).sort((a, b) => c.t[a]! - c.t[b]!);
       for (let k = 0; k < order.length - 1; k++) {
         const a = order[k]!;

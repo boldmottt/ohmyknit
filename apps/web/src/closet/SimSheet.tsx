@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { WorkData } from '../api';
 import GarmentViewer from '../sim/GarmentViewer';
+import { BodyPicker } from '../sim/BodyPicker';
+import { useBody } from '../sim/bodyPref';
 import { PatternBoard } from '../sim/PatternBoard';
 import { pct } from '../ui';
 import { artPieces } from './assembledArt';
@@ -14,6 +16,7 @@ export default function SimSheet({ data, onClose }: { data: WorkData; onClose: (
   const pieces = useMemo(() => artPieces(data), [data]);
   const [active, setActive] = useState<string | undefined>(undefined);
   const [form, setForm] = useState(true);
+  const [body, setBody] = useBody(data.project.profileId);
 
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -43,8 +46,9 @@ export default function SimSheet({ data, onClose }: { data: WorkData; onClose: (
           <h2>{data.project.name}</h2>
         </div>
         <div className="sim-actions">
+          <BodyPicker value={body} onChange={setBody} />
           <label className="sim-toggle">
-            <input type="checkbox" checked={form} onChange={(e) => setForm(e.target.checked)} /> 마네킹
+            <input type="checkbox" checked={form} onChange={(e) => setForm(e.target.checked)} /> 마네킹 보이기
           </label>
           <Link className="cta" to={`/project/${data.project.id}/work`}>
             이어하기 <span aria-hidden="true">↗</span>
@@ -61,6 +65,7 @@ export default function SimSheet({ data, onClose }: { data: WorkData; onClose: (
             palette={data.converted.palette}
             activeId={active}
             mannequin={form}
+            body={body}
             onPick={(id) => setActive((a) => (a === id ? undefined : id))}
             fallback={<p className="quiet sim-nogl">이 기기에서는 3D를 그릴 수 없어서 패턴판만 보여 드려요.</p>}
           />

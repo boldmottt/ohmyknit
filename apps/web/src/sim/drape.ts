@@ -241,7 +241,10 @@ export type YokeShape = {
 };
 
 /** 요크: 아래는 감싼 선, 위는 목둘레. 어깨에서는 마네킹 위에 얹힘 */
-function yokeSheet(base: Vec3[], shape: YokeShape, torso: Ring[]): Sheet {
+/** 요크가 몸에 얹히는 높이 y, 방향 theta에서 몸 겉면까지의 거리 */
+type Reach = (theta: number, y: number) => number;
+
+function yokeSheet(base: Vec3[], shape: YokeShape, reach: Reach): Sheet {
   const env = envelope(base);
   const sample = (arr: number[], theta: number) => {
     const x = (((theta + Math.PI) / (2 * Math.PI)) * BINS) % BINS;
@@ -263,7 +266,7 @@ function yokeSheet(base: Vec3[], shape: YokeShape, torso: Ring[]): Sheet {
       const theta = Math.PI - 2 * Math.PI * u;
       const y = height(theta, k);
       const neck = (rx * rz) / Math.hypot(rz * Math.cos(theta), rx * Math.sin(theta));
-      const rho = Math.max(lerp(sample(env.rho, theta), neck, clamp01(shape.narrow(k))), torsoReach(torso, theta, y) + 0.6);
+      const rho = Math.max(lerp(sample(env.rho, theta), neck, clamp01(shape.narrow(k))), reach(theta, y) + 0.6);
       return [rho * Math.cos(theta), y, rho * Math.sin(theta)];
     },
     inside(u, k) {
@@ -314,6 +317,11 @@ export type Draped = {
 export type DrapeOptions = {
   /** 손으로 넣는 주름 (천 시뮬레이션의 출발 모양에는 끔: 주름은 시뮬레이션이 만듦) */
   wrinkles?: boolean;
+  /**
+   * 입힐 몸 (사람 모양 마네킹): 요크가 그 어깨·목에 얹히게. 없으면 단순한 몸통 기준.
+   * 조각 자리가 정해진 뒤(요크를 만들기 전)에 불러요.
+   */
+  body?: (layout: Layout, tubes: Map<ArtPiece, Tube>, axes: Map<ArtPiece, Axis>) => { reach: Reach; neck: { y: number; rx: number; rz: number } } | null;
 };
 
 const SEGS: Record<SimRole, number> = { body: 224, front: 112, back: 112, yoke: 200, sleeveL: 96, sleeveR: 96, hat: 160, panel: 64, extra: 0 };
@@ -356,6 +364,8 @@ export function drape(pieces: ArtPiece[], opts: DrapeOptions = {}): Draped {
     const base = [body, ...sleeves].flatMap((p) => topEdge(sheets.get(p)!, tubes.get(p)!, p === body ? 240 : 96));
     const torso = smoothKeys(torsoKeys(layout));
     const neck = neckRadius(layout);
+    const fit = opts.body?.(layout, tubes, axes) ?? null;
+    const reach: Reach = fit ? fit.reach : (theta, y) => torsoReach(torso, theta, y);
     if (yoke) {
       const tube = tubes.get(yoke)!;
       const bottom = tube.rings.reduce((a, b) => (a.t < b.t ? a : b));
@@ -365,18 +375,23 @@ export function drape(pieces: ArtPiece[], opts: DrapeOptions = {}): Draped {
         rows: tube.rings.length - 1,
         rise: (k) => (tube.length > 0 ? ringAt(tube.rings, k).t / tube.length : 0),
         narrow: (k) => (span > 0.5 ? (bottom.rx - ringAt(tube.rings, k).rx) / span : tube.length > 0 ? ringAt(tube.rings, k).t / tube.length : 0),
-        neck: { rx: Math.max(neck * 1.3, top.rx), rz: Math.max(neck * 1.15, top.rz), y: layout.topY + Math.max(8, Math.min(26, tube.length * 0.82)) },
+        neck: {
+          rx: Math.max(fit ? fit.neck.rx * 1.3 : neck * 1.3, top.rx),
+          rz: Math.max(fit ? fit.neck.rz * 1.3 : neck * 1.15, top.rz),
+          y: layout.topY + Math.max(8, Math.min(26, tube.length * 0.82)),
+        },
       };
-      sheets.set(yoke, yokeSheet(base, shape, torso));
+      sheets.set(yoke, yokeSheet(base, shape, reach));
     } else {
       const rows = Math.max(8, Math.round((IMPLIED_YOKE_DEPTH / 10) * body.gauge.row));
       const shape: YokeShape = {
         rows,
         rise: (k) => k / rows,
         narrow: (k) => (k / rows) ** 1.2,
-        neck: { rx: neck * 1.75, rz: neck * 1.55, y: layout.topY + 12.8 },
+        // 몸이 있으면 그 목 밑동 바로 아래에 목둘레가 걸리게
+        neck: fit ? { rx: fit.neck.rx * 1.45, rz: fit.neck.rz * 1.4, y: fit.neck.y - 0.6 } : { rx: neck * 1.75, rz: neck * 1.55, y: layout.topY + 12.8 },
       };
-      const sheet = yokeSheet(base, shape, torso);
+      const sheet = yokeSheet(base, shape, reach);
       const rowStitches = Array.from({ length: rows }, (_, k) => Math.max(4, Math.round((girth(sheet, k + 0.5) / 10) * body.gauge.st)));
       impliedYoke = { sheet, rowStitches };
     }

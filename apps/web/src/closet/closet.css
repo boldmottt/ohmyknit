@@ -883,3 +883,33 @@
     opacity: 0.55;
   }
 }
+
+/* 마네킹 몸 고르기 (여자 · 남자) */
+.body-pick {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 999px;
+  background: rgba(255, 252, 247, 0.86);
+  border: 1px solid var(--c-line, rgba(60, 45, 35, 0.14));
+}
+.body-pick button {
+  border: 0;
+  background: transparent;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  color: var(--c-soft, #6f645c);
+  cursor: pointer;
+}
+.body-pick button[aria-checked='true'] {
+  background: var(--c-ink, #3b322d);
+  color: #fff;
+}
+/* 옷장 정지 그림: 아래(다리·받침)는 잘리니 흐리게 사라지게 */
+.hang .garment-art {
+  -webkit-mask-image: linear-gradient(180deg, #000 78%, transparent 99%);
+  mask-image: linear-gradient(180deg, #000 78%, transparent 99%);
+}

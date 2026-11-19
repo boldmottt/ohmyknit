@@ -1271,3 +1271,34 @@ button.sync {
     opacity: 0.55;
   }
 }
+
+/* 마네킹 몸 고르기 (여자 · 남자) */
+.body-pick {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 999px;
+  background: rgba(255, 252, 247, 0.86);
+  border: 1px solid rgba(60, 45, 35, 0.14);
+}
+.body-pick button {
+  border: 0;
+  background: transparent;
+  padding: 5px 13px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
+  color: #6f645c;
+  cursor: pointer;
+}
+.body-pick button[aria-checked='true'] {
+  background: #3b322d;
+  color: #fff;
+}
+.cmp-body {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 1;
+}

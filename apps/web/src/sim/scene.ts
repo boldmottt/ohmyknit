@@ -2,12 +2,12 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { DEFAULT_MAIN, type Palette } from '@knitcloset/knit-render';
 import type { ArtPiece } from '../closet/assembledArt';
-import { axisSheet, drape, ringSheet, type Draped, type Sheet } from './drape';
+import type { Sheet } from './drape';
+import { bodyOf, emptyBody, limbSheet, loftSheet, type BodyKind, type BodyModel } from './body';
+import type { Occupancy } from './cloth';
 import { makeKnitMaterial, rowDataTexture } from './fabric';
-import { armFitted, headFitted, neckRadius, standNeck, torsoFitted } from './form';
 import { addOcclusion, edgePath, patch } from './mesh';
-import { clothDraped, withOcclusion } from './drapeSim';
-import type { Layout, SimRole } from './shape';
+import { clothDraped, drapeFor, shapeKey, withOcclusion } from './drapeSim';
 import { pieceMaps, plainMaps, type KnitMaps } from './textures';
 
 /**
@@ -46,85 +46,98 @@ export class TexCache {
   }
 }
 
-const FORM_COLOR = 0xe4ddd4;
+/** 마네킹: 매끈한 유광 섬유 느낌의 밝은 회베이지 */
+const FORM_COLOR = 0xddd6ce;
 const WOOD_COLOR = 0xb48a5c;
+const POLE_COLOR = 0x9a9aa2;
 
-function formMesh(sheet: Sheet, mat: THREE.Material, D?: Draped): THREE.Mesh {
-  const m = new THREE.Mesh(patch(D?.occ ? withOcclusion(sheet, D.occ) : sheet, 0, sheet.rows, 0, 1)!, mat);
+function formMesh(sheet: Sheet, mat: THREE.Material, occ: Occupancy | undefined, name: string): THREE.Mesh {
+  const m = new THREE.Mesh(patch(occ ? withOcclusion(sheet, occ) : sheet, 0, sheet.rows, 0, 1)!, mat);
   m.castShadow = true;
   m.receiveShadow = true;
+  m.name = name;
   return m;
 }
 
-function hatStand(D: Draped, mat: THREE.Material, wood: THREE.Material): THREE.Group {
-  const grp = new THREE.Group();
-  const L = D.layout;
-  const { rh, rv, cy } = L.head!;
-  const hat = [...L.roles].find(([, x]) => x === 'hat')![0];
-  const tube = D.tubes.get(hat)!;
-  grp.add(formMesh(ringSheet(headFitted(L, tube)), mat, D));
-  // 모자 가게의 머리 받침: 목 → 받침대 → 나무 원판
-  grp.add(formMesh(ringSheet(standNeck(L)), mat, D));
-  const ny = cy - rv * 0.86;
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(rh * 0.95, rh * 1.05, 1.6, 48), wood);
-  base.position.set(0, ny - 13.6, 0);
-  base.castShadow = true;
-  base.receiveShadow = true;
-  grp.add(base);
-  return grp;
+function formMaterial() {
+  const mat = new THREE.MeshPhysicalMaterial({ color: FORM_COLOR, roughness: 0.5, metalness: 0, clearcoat: 0.3, clearcoatRoughness: 0.5 });
+  mat.onBeforeCompile = (shader) => addOcclusion(shader, 0.75);
+  mat.customProgramCacheKey = () => 'form-ao-2';
+  return mat;
 }
 
-/** 마네킹: 스웨터는 몸통·목·팔, 모자는 머리·목·받침 */
-function mannequin(D: Draped): THREE.Group {
-  const L = D.layout;
-  const mat = new THREE.MeshStandardMaterial({ color: FORM_COLOR, roughness: 0.78, metalness: 0 });
-  mat.onBeforeCompile = (shader) => addOcclusion(shader, 0.75);
-  mat.customProgramCacheKey = () => 'form-ao';
-  const wood = new THREE.MeshStandardMaterial({ color: WOOD_COLOR, roughness: 0.55 });
-  if (L.isHat && L.head) {
-    const stand = hatStand(D, mat, wood);
-    stand.name = 'form';
-    return stand;
-  }
+/** 같은 몸이면 다시 만들지 않음 (+1 할 때마다 마네킹 그늘까지 다시 계산하지 않게) */
+const formCache = new Map<string, THREE.Group>();
+
+function disposeGroup(g: THREE.Object3D) {
+  g.traverse((o) => {
+    if (o instanceof THREE.Mesh) {
+      o.geometry.dispose();
+      (o.material as THREE.Material).dispose();
+    }
+  });
+}
+
+/** 사람 모양 마네킹: 몸통·머리(단면 쌓기), 팔·손·엄지·허벅지(관), 받침대 */
+function bodyGroup(b: BodyModel, occ: Occupancy | undefined, key: string): THREE.Group {
+  const hit = formCache.get(key);
+  if (hit) return hit.clone();
   const grp = new THREE.Group();
   grp.name = 'form';
-  const find = (r: SimRole) => [...L.roles].find(([, x]) => x === r)?.[0];
-  grp.add(formMesh(ringSheet(torsoFitted(L, D.tubes)), mat, D));
-  // 목 위 나무 마개
-  const neck = neckRadius(L);
-  const cap = new THREE.Mesh(new THREE.CylinderGeometry(neck * 0.55, neck * 0.62, 2.2, 32), wood);
-  cap.position.set(0, L.topY + 24.2, 0);
-  cap.castShadow = true;
-  grp.add(cap);
-
-  for (const side of ['sleeveL', 'sleeveR'] as const) {
-    const s = find(side);
-    const tube = s ? D.tubes.get(s) : undefined;
-    const axis = s ? D.axes.get(s) : undefined;
-    if (!tube || !axis) continue;
-    grp.add(formMesh(axisSheet(armFitted(tube), axis, 48), mat, D));
+  const mat = formMaterial();
+  if (b.torso) grp.add(formMesh(loftSheet(b.torso, 128), mat, occ, 'torso'));
+  grp.add(formMesh(loftSheet(b.head, 96), mat, occ, 'head'));
+  for (const arm of b.arms) grp.add(formMesh(limbSheet(arm, 56), mat, occ, 'arm'));
+  for (const hand of b.hands) grp.add(formMesh(limbSheet(hand, 48), mat, occ, 'hand'));
+  for (const limb of b.limbs) grp.add(formMesh(limbSheet(limb, 48), mat, occ, 'limb'));
+  if (b.pole) {
+    const { a, b: e, r } = b.pole;
+    const len = Math.hypot(e[0] - a[0], e[1] - a[1], e[2] - a[2]);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 20), new THREE.MeshStandardMaterial({ color: POLE_COLOR, metalness: 0.85, roughness: 0.3 }));
+    pole.position.set((a[0] + e[0]) / 2, (a[1] + e[1]) / 2, (a[2] + e[2]) / 2);
+    pole.castShadow = true;
+    pole.name = 'pole';
+    grp.add(pole);
   }
-  return grp;
+  if (b.base) {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(b.base.r * 0.96, b.base.r, b.base.h, 64), new THREE.MeshStandardMaterial({ color: WOOD_COLOR, roughness: 0.55 }));
+    base.position.set(...b.base.c);
+    base.castShadow = true;
+    base.receiveShadow = true;
+    base.name = 'base';
+    grp.add(base);
+  }
+  formCache.set(key, grp);
+  if (formCache.size > 10) {
+    const [first, old] = formCache.entries().next().value as [string, THREE.Group];
+    formCache.delete(first);
+    disposeGroup(old);
+  }
+  return grp.clone();
+}
+
+/** 보이는 부분: 몸통·머리·팔 (허벅지·받침 빼고) */
+function formFocus(g: THREE.Object3D): THREE.Box3 {
+  const box = new THREE.Box3();
+  g.traverse((o) => {
+    if (o instanceof THREE.Mesh && (o.name === 'torso' || o.name === 'head' || o.name === 'arm')) box.expandByObject(o);
+  });
+  return box;
 }
 
 /** 아무것도 안 입은 마네킹 (새 작품 자리) */
-export function buildEmptyForm(): THREE.Group {
-  const layout: Layout = {
-    roles: new Map(),
-    tubes: new Map(),
-    place: new Map(),
-    topY: 44,
-    topRx: 16.5,
-    topRz: 12.5,
-    shoulder: null,
-    isHat: false,
-    head: null,
-  };
-  return mannequin({ layout, sheets: new Map(), tubes: new Map(), axes: new Map(), impliedYoke: null });
+export function buildEmptyForm(kind: BodyKind = 'female'): { group: THREE.Group; focus: THREE.Box3 } {
+  const group = bodyGroup(emptyBody(kind), undefined, `empty|${kind}`);
+  const focus = formFocus(group);
+  // 허리 아래 조금까지
+  focus.min.y = Math.max(focus.min.y, focus.max.y - 82);
+  return { group, focus };
 }
 
 export type ModelOptions = {
   mannequin: boolean;
+  /** 입힐 몸 (여자·남자) */
+  body?: BodyKind;
   activeId?: string;
 };
 
@@ -132,6 +145,8 @@ export type Model = {
   group: THREE.Group;
   /** 조각 메시 (누르면 그 조각을 찾는 데 씀) */
   pickables: THREE.Mesh[];
+  /** 카메라가 담을 범위: 옷과 머리 (마네킹 다리·받침은 빼고) */
+  focus: THREE.Box3;
   dispose(): void;
 };
 
@@ -243,8 +258,9 @@ function pieceMeshes(
 }
 
 export function buildModel(pieces: ArtPiece[], palette: Palette, tex: TexCache, opts: ModelOptions): Model | null {
-  // 천 시뮬레이션을 마쳤으면 늘어뜨린 모양, 아직이면 계산한 모양
-  const D = clothDraped(pieces) ?? drape(pieces);
+  // 천 시뮬레이션을 마쳤으면 늘어뜨린 모양, 아직이면 계산한 모양 (둘 다 고른 몸에 맞춤)
+  const kind = opts.body ?? 'female';
+  const D = clothDraped(pieces, kind) ?? drapeFor(pieces, kind, true);
   if (D.sheets.size === 0) return null;
   const group = new THREE.Group();
   const pickables: THREE.Mesh[] = [];
@@ -291,17 +307,20 @@ export function buildModel(pieces: ArtPiece[], palette: Palette, tex: TexCache, 
     }
   }
 
-  if (opts.mannequin) {
-    const form = mannequin(D);
-    form.traverse((o) => {
-      if (o instanceof THREE.Mesh) bin.push(o.geometry, o.material as THREE.Material);
-    });
-    group.add(form);
+  // 카메라 범위: 옷 + 머리 (다리·받침은 화면 밖으로 잘려도 됨)
+  const focus = new THREE.Box3().setFromObject(group);
+  const body = bodyOf(kind, D.layout, D.tubes, D.axes);
+  if (body) {
+    focus.max.y = Math.max(focus.max.y, body.top + 1.5);
+    if (!body.torso) focus.min.y = Math.min(focus.min.y, body.head.y[0]! - 2);
+    else focus.min.y -= 6;
+    if (opts.mannequin) group.add(bodyGroup(body, D.occ, `${shapeKey(pieces, kind)}|${D.occ ? 'occ' : ''}`));
   }
 
   return {
     group,
     pickables,
+    focus,
     dispose() {
       for (const d of bin) d.dispose();
     },
