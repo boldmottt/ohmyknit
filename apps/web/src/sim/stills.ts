@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Palette } from '@knitcloset/knit-render';
 import type { ArtPiece } from '../closet/assembledArt';
+import { ensureCloth } from './drapeSim';
 import { buildEmptyForm, buildModel, frameCamera, makeStage, TexCache } from './scene';
 
 /**
@@ -47,6 +48,8 @@ export function renderStill(key: string, pieces: ArtPiece[], palette: Palette): 
     await new Promise((r) => setTimeout(r, 0));
     const r = getRig();
     if (!r) return null;
+    // 천이 다 늘어진 모양으로 찍음 (계산은 워커에서, 한 번 하면 기억)
+    await ensureCloth(pieces);
     const model = buildModel(pieces, palette, r.tex, { mannequin: true });
     if (!model) return null;
     try {

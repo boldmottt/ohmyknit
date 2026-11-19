@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { addOcclusion } from './mesh';
 
 /**
  * 니트 원단 재질.
@@ -216,7 +217,8 @@ export function makeKnitMaterial(o: KnitMaterialOptions): THREE.MeshPhysicalMate
       .replace('#include <map_pars_fragment>', `#include <map_pars_fragment>\n${PARS}`)
       .replace('#include <map_fragment>', STITCH)
       .replace('#include <normal_fragment_maps>', NORMAL);
+    addOcclusion(shader, 0.7);
   };
-  mat.customProgramCacheKey = () => 'knit-fabric';
+  mat.customProgramCacheKey = () => 'knit-fabric-ao';
   return mat;
 }

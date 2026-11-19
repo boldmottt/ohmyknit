@@ -4,9 +4,10 @@ import { DEFAULT_MAIN, type Palette } from '@knitcloset/knit-render';
 import type { ArtPiece } from '../closet/assembledArt';
 import { axisSheet, drape, ringSheet, type Draped, type Sheet } from './drape';
 import { makeKnitMaterial, rowDataTexture } from './fabric';
-import { neckRadius, radiusAt, smoothKeys, torsoKeys } from './form';
-import { edgePath, patch } from './mesh';
-import type { Layout, Ring, SimRole } from './shape';
+import { armFitted, headFitted, neckRadius, standNeck, torsoFitted } from './form';
+import { addOcclusion, edgePath, patch } from './mesh';
+import { clothDraped, withOcclusion } from './drapeSim';
+import type { Layout, SimRole } from './shape';
 import { pieceMaps, plainMaps, type KnitMaps } from './textures';
 
 /**
@@ -48,46 +49,23 @@ export class TexCache {
 const FORM_COLOR = 0xe4ddd4;
 const WOOD_COLOR = 0xb48a5c;
 
-function formMesh(sheet: Sheet, mat: THREE.Material): THREE.Mesh {
-  const m = new THREE.Mesh(patch(sheet, 0, sheet.rows, 0, 1)!, mat);
+function formMesh(sheet: Sheet, mat: THREE.Material, D?: Draped): THREE.Mesh {
+  const m = new THREE.Mesh(patch(D?.occ ? withOcclusion(sheet, D.occ) : sheet, 0, sheet.rows, 0, 1)!, mat);
   m.castShadow = true;
   m.receiveShadow = true;
   return m;
 }
 
-/** 옷보다 살짝 작게 줄인 고리 (마네킹이 옷 밖으로 나오지 않게) */
-function fitted(keys: Ring[], limit?: (y: number) => [number, number] | null): Ring[] {
-  const rings = smoothKeys(keys);
-  if (!limit) return rings;
-  return rings.map((r) => {
-    const c = limit(r.t);
-    return c ? { t: r.t, rx: Math.min(r.rx, c[0] * 0.94), rz: Math.min(r.rz, c[1] * 0.92) } : r;
-  });
-}
-
 function hatStand(D: Draped, mat: THREE.Material, wood: THREE.Material): THREE.Group {
   const grp = new THREE.Group();
   const L = D.layout;
-  const { rh, rv, rz, cy } = L.head!;
+  const { rh, rv, cy } = L.head!;
   const hat = [...L.roles].find(([, x]) => x === 'hat')![0];
   const tube = D.tubes.get(hat)!;
-  // 머리: 위는 모자가 씌워진 타원, 아래(턱)는 조금 길게
-  const head: Ring[] = [];
-  for (let i = 0; i <= 14; i++) {
-    const ang = -Math.PI / 2 + (Math.PI * i) / 14;
-    const v = ang < 0 ? rv * 1.12 : rv;
-    head.push({ t: cy + Math.sin(ang) * v, rx: Math.max(0.05, Math.cos(ang) * rh), rz: Math.max(0.05, Math.cos(ang) * rz) });
-  }
-  grp.add(formMesh(ringSheet(fitted(head, (y) => radiusAt(tube, y))), mat));
+  grp.add(formMesh(ringSheet(headFitted(L, tube)), mat, D));
   // 모자 가게의 머리 받침: 목 → 받침대 → 나무 원판
+  grp.add(formMesh(ringSheet(standNeck(L)), mat, D));
   const ny = cy - rv * 0.86;
-  const neck: Ring[] = [
-    { t: ny - 13, rx: rh * 0.32, rz: rh * 0.32 },
-    { t: ny - 8, rx: rh * 0.36, rz: rh * 0.36 },
-    { t: ny - 4, rx: rh * 0.5, rz: rh * 0.55 },
-    { t: ny + 3, rx: rh * 0.5, rz: rh * 0.56 },
-  ];
-  grp.add(formMesh(ringSheet(fitted(neck)), mat));
   const base = new THREE.Mesh(new THREE.CylinderGeometry(rh * 0.95, rh * 1.05, 1.6, 48), wood);
   base.position.set(0, ny - 13.6, 0);
   base.castShadow = true;
@@ -100,6 +78,8 @@ function hatStand(D: Draped, mat: THREE.Material, wood: THREE.Material): THREE.G
 function mannequin(D: Draped): THREE.Group {
   const L = D.layout;
   const mat = new THREE.MeshStandardMaterial({ color: FORM_COLOR, roughness: 0.78, metalness: 0 });
+  mat.onBeforeCompile = (shader) => addOcclusion(shader, 0.75);
+  mat.customProgramCacheKey = () => 'form-ao';
   const wood = new THREE.MeshStandardMaterial({ color: WOOD_COLOR, roughness: 0.55 });
   if (L.isHat && L.head) {
     const stand = hatStand(D, mat, wood);
@@ -109,16 +89,7 @@ function mannequin(D: Draped): THREE.Group {
   const grp = new THREE.Group();
   grp.name = 'form';
   const find = (r: SimRole) => [...L.roles].find(([, x]) => x === r)?.[0];
-  const body = find('body') ?? find('front');
-  const back = find('back');
-  const bodyTube = body ? D.tubes.get(body) : undefined;
-  const backTube = back ? D.tubes.get(back) : undefined;
-  const limit = (y: number): [number, number] | null => {
-    const a = bodyTube ? radiusAt(bodyTube, y) : null;
-    const b = backTube ? radiusAt(backTube, y) : null;
-    return a && b ? [Math.min(a[0], b[0]), Math.min(a[1], b[1])] : a;
-  };
-  grp.add(formMesh(ringSheet(fitted(torsoKeys(L), limit)), mat));
+  grp.add(formMesh(ringSheet(torsoFitted(L, D.tubes)), mat, D));
   // 목 위 나무 마개
   const neck = neckRadius(L);
   const cap = new THREE.Mesh(new THREE.CylinderGeometry(neck * 0.55, neck * 0.62, 2.2, 32), wood);
@@ -131,20 +102,7 @@ function mannequin(D: Draped): THREE.Group {
     const tube = s ? D.tubes.get(s) : undefined;
     const axis = s ? D.axes.get(s) : undefined;
     if (!tube || !axis) continue;
-    const sorted = [...tube.rings].sort((a, b) => a.t - b.t);
-    const last = sorted[sorted.length - 1]!;
-    const keys: Ring[] = [
-      { t: -9, rx: 0.2, rz: 0.2 },
-      { t: -7.5, rx: 2.1, rz: 1.6 },
-      { t: -4, rx: 2.4, rz: 1.9 },
-      ...[0.05, 0.3, 0.55, 0.8, 0.98].map((f) => {
-        const r = sorted[Math.round(f * (sorted.length - 1))]!;
-        return { t: r.t, rx: r.rx * 0.76, rz: r.rz * 0.74 };
-      }),
-      { t: tube.length + 2.5, rx: last.rx * 0.7, rz: last.rz * 0.68 },
-      { t: tube.length + 4.5, rx: 0.3, rz: 0.3 },
-    ];
-    grp.add(formMesh(axisSheet(fitted(keys, (y) => radiusAt(tube, y)), axis, 48), mat));
+    grp.add(formMesh(axisSheet(armFitted(tube), axis, 48), mat, D));
   }
   return grp;
 }
@@ -193,8 +151,53 @@ function knitMaterials(maps: KnitMaps, yarn: string, tex: TexCache, active: bool
   return { knit, inner, ghost };
 }
 
+/** 원단 두께의 반 (cm): 밑단·소맷부리·목둘레가 종이처럼 얇게 잘려 보이지 않게 둥글게 감은 가장자리 */
+const EDGE_R = 0.22;
+
+/** 주름 그늘 값이 없는 도형(관)에는 1(트인 곳)을 채움: 셰이더가 0으로 읽어 까맣게 되지 않게 */
+function openSky(g: THREE.BufferGeometry) {
+  g.setAttribute('occlusion', new THREE.BufferAttribute(new Float32Array(g.attributes.position!.count).fill(1), 1));
+  return g;
+}
+
+/**
+ * k단 가장자리를 따라 감은 관 (원단 두께). 코 격자 좌표(uv)를 그 단에 맞춰서
+ * 니트 재질이 가장자리에도 같은 코·같은 색으로 이어져요.
+ */
+function edgeRoll(sheet: Sheet, k: number): THREE.BufferGeometry {
+  const n = sheet.closed ? 160 : 80;
+  const pts: THREE.Vector3[] = [];
+  const us: number[] = [];
+  for (let i = 0; i <= n; i++) {
+    if (sheet.closed && i === n) break;
+    const u = i / n;
+    const p = sheet.at(u, k);
+    const q = sheet.inside(u, k);
+    // 가장자리 바로 안쪽으로 반만큼: 겉으로 반, 안으로 반 튀어나온 두께
+    const out = [p[0] - q[0], p[1] - q[1], p[2] - q[2]];
+    const l = Math.hypot(out[0]!, out[1]!, out[2]!) || 1;
+    pts.push(new THREE.Vector3(p[0] - (out[0]! / l) * EDGE_R * 0.4, p[1] - (out[1]! / l) * EDGE_R * 0.4, p[2] - (out[2]! / l) * EDGE_R * 0.4));
+    us.push(u);
+  }
+  const seg = sheet.closed ? n * 2 : n * 2;
+  const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, sheet.closed, 'centripetal'), seg, EDGE_R, 8, sheet.closed);
+  const uv = g.attributes.uv!;
+  const v = sheet.rows > 0 ? Math.min(1, Math.max(0, k / sheet.rows)) : 0;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i), k === 0 ? v + 0.25 / Math.max(1, sheet.rows) : v - 0.25 / Math.max(1, sheet.rows));
+  return openSky(g);
+}
+
 /** 조각 하나: 뜬 단은 원단, 남은 단은 반투명, 경계에 줄바늘 */
-function pieceMeshes(p: ArtPiece, sheet: Sheet, mats: ReturnType<typeof knitMaterials>, active: boolean, bin: Bin, pickables: THREE.Mesh[]): THREE.Group {
+function pieceMeshes(
+  p: ArtPiece,
+  sheet: Sheet,
+  mats: ReturnType<typeof knitMaterials>,
+  active: boolean,
+  bin: Bin,
+  pickables: THREE.Mesh[],
+  /** 꿰매지 않은 가장자리 (단 번호 0 또는 R) */
+  edges: number[],
+): THREE.Group {
   const pg = new THREE.Group();
   pg.userData.pieceId = p.piece.id;
   const R = sheet.rows;
@@ -223,6 +226,12 @@ function pieceMeshes(p: ArtPiece, sheet: Sheet, mats: ReturnType<typeof knitMate
   add(part > 0 ? patch(sheet, done, done + 1, 0, 1 - part) : null, mats.ghost, false);
   add(patch(sheet, part > 0 ? done + 1 : done, R, 0, 1), mats.ghost, false);
 
+  // 원단 두께: 뜬 가장자리는 원단, 아직 안 뜬 가장자리는 반투명
+  for (const k of edges) {
+    const knitted = k === 0 ? done >= 1 : done >= R;
+    add(edgeRoll(sheet, k), knitted ? mats.knit : mats.ghost, knitted);
+  }
+
   if (done > 0 && done < R) {
     const ng = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(edgePath(sheet, done, 0.35), sheet.closed), sheet.closed ? 160 : 60, active ? 0.28 : 0.22, 8, sheet.closed);
     bin.push(ng);
@@ -234,18 +243,32 @@ function pieceMeshes(p: ArtPiece, sheet: Sheet, mats: ReturnType<typeof knitMate
 }
 
 export function buildModel(pieces: ArtPiece[], palette: Palette, tex: TexCache, opts: ModelOptions): Model | null {
-  const D = drape(pieces);
+  // 천 시뮬레이션을 마쳤으면 늘어뜨린 모양, 아직이면 계산한 모양
+  const D = clothDraped(pieces) ?? drape(pieces);
   if (D.sheets.size === 0) return null;
   const group = new THREE.Group();
   const pickables: THREE.Mesh[] = [];
   const bin: Bin = [];
   const yarn = palette[0] ?? { name: '', hex: DEFAULT_MAIN };
 
+  const roles = D.layout.roles;
+  const hasYoke = !!D.impliedYoke || [...roles.values()].includes('yoke');
   for (const [p, sheet] of D.sheets) {
     if (sheet.rows === 0) continue;
     const active = opts.activeId === p.piece.id;
     const mats = knitMaterials(pieceMaps(p.piece, palette), yarn.hex, tex, active, bin);
-    group.add(pieceMeshes(p, sheet, mats, active, bin, pickables));
+    // 아래쪽 끝(밑단·소맷부리·챙)과, 요크가 없으면 위쪽 끝도 그대로 드러난 가장자리
+    const role = roles.get(p);
+    const R = sheet.rows;
+    const lowK = sheet.at(0.25, 0)[1] <= sheet.at(0.25, R)[1] ? 0 : R;
+    const edges: number[] = [];
+    if (role === 'yoke') edges.push(R - lowK);
+    else if (role === 'hat') edges.push(lowK);
+    else {
+      edges.push(lowK);
+      if (!hasYoke) edges.push(R - lowK);
+    }
+    group.add(pieceMeshes(p, sheet, mats, active, bin, pickables, edges));
   }
 
   // 도안에 요크가 없으면: 몸판과 소매가 어깨에서 이어질 예상 모습을 반투명으로
@@ -259,6 +282,12 @@ export function buildModel(pieces: ArtPiece[], palette: Palette, tex: TexCache, 
       mesh.renderOrder = 2;
       mesh.name = 'implied-yoke';
       group.add(mesh);
+      // 목둘레 가장자리 두께
+      const neck = edgeRoll(sheet, sheet.at(0.25, 0)[1] <= sheet.at(0.25, sheet.rows)[1] ? sheet.rows : 0);
+      bin.push(neck);
+      const nm = new THREE.Mesh(neck, mats.ghost);
+      nm.renderOrder = 2;
+      group.add(nm);
     }
   }
 
@@ -292,10 +321,13 @@ export function makeStage(renderer: THREE.WebGLRenderer) {
   const env = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   pmrem.dispose();
   scene.environment = env;
-  scene.environmentIntensity = 0.32;
-  const hemi = new THREE.HemisphereLight(0xfff6ee, 0xcfbfae, 0.7);
+  scene.environmentIntensity = 0.3;
+  // 스튜디오 조명: 왼쪽 위 앞에서 주광(그림자), 오른쪽에서 약한 보조광, 뒤에서 윤곽광
+  const hemi = new THREE.HemisphereLight(0xfff6ee, 0xcbb9a6, 0.5);
   scene.add(hemi);
-  const key = new THREE.DirectionalLight(0xfff4e8, 2.4);
+  const fill = new THREE.DirectionalLight(0xf3f0ff, 0.45);
+  scene.add(fill);
+  const key = new THREE.DirectionalLight(0xfff4e8, 2.7);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
   key.shadow.bias = -0.0004;
@@ -315,8 +347,9 @@ export function makeStage(renderer: THREE.WebGLRenderer) {
     const c = box.getCenter(new THREE.Vector3());
     const s = box.getSize(new THREE.Vector3());
     const r = Math.max(s.x, s.y, s.z);
-    // 위에서 살짝 앞·왼쪽: 그림자가 옷 바로 아래에 짧게 떨어지게
-    key.position.set(c.x - r * 0.45, c.y + r * 2.2, c.z + r * 0.75);
+    // 왼쪽 위 앞: 옆으로 비껴 들어와 주름의 굴곡이 드러나고, 그림자는 옷 아래에 짧게
+    key.position.set(c.x - r * 1.05, c.y + r * 1.9, c.z + r * 0.95);
+    fill.position.set(c.x + r * 1.2, c.y + r * 0.35, c.z + r * 0.7);
     key.target.position.copy(c);
     const cam = key.shadow.camera;
     cam.left = -r * 1.4;

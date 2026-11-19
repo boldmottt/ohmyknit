@@ -14,6 +14,8 @@ export function patch(sheet: Sheet, k0: number, k1: number, u0: number, u1: numb
   const pos = new Float32Array(count * 3);
   const nor = new Float32Array(count * 3);
   const uv = new Float32Array(count * 2);
+  // 주름 안쪽 그늘 (없으면 1 = 트인 곳)
+  const occ = new Float32Array(count).fill(1);
   const eu = 1e-3;
   const ek = 0.05;
   const edge = (u: number) => (sheet.closed ? u : Math.max(0, Math.min(1, u)));
@@ -33,6 +35,7 @@ export function patch(sheet: Sheet, k0: number, k1: number, u0: number, u1: numb
       pos.set(p, i * 3);
       nor.set([(n[0] / len) * sign, (n[1] / len) * sign, (n[2] / len) * sign], i * 3);
       uv.set([u, R > 0 ? k / R : 0], i * 2);
+      if (sheet.ao) occ[i] = sheet.ao(u, k);
       i++;
     }
   }
@@ -63,6 +66,7 @@ export function patch(sheet: Sheet, k0: number, k1: number, u0: number, u1: numb
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setAttribute('occlusion', new THREE.BufferAttribute(occ, 1));
   g.setIndex(idx);
   return g;
 }
@@ -100,4 +104,25 @@ export function edgePath(sheet: Sheet, k: number, lift: number): THREE.Vector3[]
   }
   if (sheet.closed) pts.pop();
   return pts;
+}
+
+/**
+ * 재질에 주름 그늘 붙이기: 정점의 occlusion(0..1)으로 간접광은 그대로 곱하고, 직접광은 덜 곱해요
+ * (주름 골이 어두워지되 빛이 닿는 쪽은 살아 있게).
+ */
+export function addOcclusion(shader: { vertexShader: string; fragmentShader: string }, direct = 0.6) {
+  shader.vertexShader = shader.vertexShader
+    .replace('#include <common>', '#include <common>\nattribute float occlusion;\nvarying float vOcclusion;')
+    .replace('#include <begin_vertex>', '#include <begin_vertex>\nvOcclusion = occlusion;');
+  shader.fragmentShader = shader.fragmentShader
+    .replace('#include <common>', '#include <common>\nvarying float vOcclusion;')
+    .replace(
+      '#include <aomap_fragment>',
+      `#include <aomap_fragment>
+      float kOcc = clamp(vOcclusion, 0.0, 1.0);
+      reflectedLight.indirectDiffuse *= kOcc;
+      reflectedLight.indirectSpecular *= kOcc;
+      reflectedLight.directDiffuse *= mix(1.0, kOcc, ${direct.toFixed(2)});
+      reflectedLight.directSpecular *= mix(1.0, kOcc, ${direct.toFixed(2)});`,
+    );
 }

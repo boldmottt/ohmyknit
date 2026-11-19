@@ -22,11 +22,13 @@ export default function GarmentViewer({ pieces, palette, activeId, onPick, manne
   const pick = useRef(onPick);
   pick.current = onPick;
   const [failed, setFailed] = useState(false);
+  const [settling, setSettling] = useState(false);
 
   useEffect(() => {
     if (!host.current) return;
     try {
       viewer.current = new Viewer(host.current, (id) => pick.current?.(id));
+      viewer.current.onSettling = setSettling;
     } catch {
       setFailed(true);
     }
@@ -45,5 +47,13 @@ export default function GarmentViewer({ pieces, palette, activeId, onPick, manne
   }, [pieces, palette, activeId, mannequin]);
 
   if (failed) return <>{fallback ?? null}</>;
-  return <div ref={host} className={`garment-3d${className ? ` ${className}` : ''}`} />;
+  return (
+    <div ref={host} className={`garment-3d${className ? ` ${className}` : ''}`}>
+      {settling && (
+        <span className="garment-settling" role="status">
+          천이 늘어지는 중…
+        </span>
+      )}
+    </div>
+  );
 }

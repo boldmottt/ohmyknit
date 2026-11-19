@@ -8,16 +8,24 @@ import { api, ApiError, type WorkData } from './api';
  * - work: 작업 화면 데이터 캐시 (맥북이 잠들어도 아이패드에서 열 수 있게)
  */
 type CachedWork = { projectId: string; data: WorkData; savedAt: number };
+/** 천 시뮬레이션으로 늘어뜨린 모양 (조각마다 입자 위치). 옷 모양이 같으면 다시 계산하지 않게 */
+type CachedCloth = { key: string; pos: Float32Array[]; savedAt: number };
 
 class KnitDb extends Dexie {
   pending!: EntityTable<ProgressEvent & { projectId: string }, 'id'>;
   work!: EntityTable<CachedWork, 'projectId'>;
+  cloth!: EntityTable<CachedCloth, 'key'>;
 
   constructor() {
     super('knitcloset');
     this.version(1).stores({
       pending: 'id, pieceId, projectId, at',
       work: 'projectId',
+    });
+    this.version(2).stores({
+      pending: 'id, pieceId, projectId, at',
+      work: 'projectId',
+      cloth: 'key',
     });
   }
 }

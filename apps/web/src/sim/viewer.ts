@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { Palette } from '@knitcloset/knit-render';
 import type { ArtPiece } from '../closet/assembledArt';
+import { clothDraped, ensureCloth, shapeKey } from './drapeSim';
 import { buildModel, frameCamera, makeStage, TexCache, type Model, type ModelOptions } from './scene';
 
 /**
@@ -60,7 +61,22 @@ export class Viewer {
     this.loop();
   }
 
+  private last: { pieces: ArtPiece[]; palette: Palette; opts: ModelOptions } | null = null;
+  /** 천이 아직 늘어지는 중인지 (화면에 '주름 잡는 중' 표시용) */
+  onSettling?: (busy: boolean) => void;
+
   set(pieces: ArtPiece[], palette: Palette, opts: ModelOptions) {
+    this.last = { pieces, palette, opts };
+    // 천 시뮬레이션이 아직이면 지금 모양으로 먼저 보여 주고, 끝나면 늘어뜨린 모양으로 바꿈
+    if (!clothDraped(pieces)) {
+      const key = shapeKey(pieces);
+      this.onSettling?.(true);
+      void ensureCloth(pieces).then(() => {
+        if (!this.last || shapeKey(this.last.pieces) !== key || this.disposed) return;
+        this.onSettling?.(false);
+        this.set(this.last.pieces, this.last.palette, this.last.opts);
+      });
+    } else this.onSettling?.(false);
     const next = buildModel(pieces, palette, this.tex, opts);
     if (this.model) {
       this.stage.scene.remove(this.model.group);
@@ -115,7 +131,10 @@ export class Viewer {
     if (id) this.onPick(id);
   };
 
+  private disposed = false;
+
   dispose() {
+    this.disposed = true;
     cancelAnimationFrame(this.raf);
     clearTimeout(this.idle);
     this.ro.disconnect();

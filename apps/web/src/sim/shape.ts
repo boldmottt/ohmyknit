@@ -147,7 +147,7 @@ export function wearHat(tube: Tube): { tube: Tube; head: NonNullable<Layout['hea
   const rh = brim.rx * 1.08;
   const rv = rh * 1.2;
   const rzh = rh * 1.13;
-  const thB = -0.12;
+  const thB = -0.3;
   const cy = -rv * Math.sin(thB);
   // 이마에서 정수리까지 머리 곡선 길이
   let sHead = 0;

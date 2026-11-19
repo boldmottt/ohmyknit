@@ -1,5 +1,6 @@
 import type { ArtPiece } from '../closet/assembledArt';
 import { neckRadius, smoothKeys, torsoKeys, torsoReach } from './form';
+import type { Occupancy } from './cloth';
 import { layoutOf, wrinkle, type Layout, type Placement, type Ring, type SimRole, type Tube } from './shape';
 
 /**
@@ -24,6 +25,8 @@ export type Sheet = {
   at(u: number, k: number): Vec3;
   /** 면 안쪽의 한 점: 법선을 바깥으로 맞추는 데 씀 */
   inside(u: number, k: number): Vec3;
+  /** 주름 안쪽 그늘 (1 = 트인 곳). 천 시뮬레이션을 마치면 생김 */
+  ao?(u: number, k: number): number;
 };
 
 export type Axis = { at(t: number): { p: Vec3; x: Vec3; y: Vec3; z: Vec3 } };
@@ -98,8 +101,8 @@ function phiOf(kind: Tube['kind'], role: SimRole, u: number) {
   return kind === 'tube' ? Math.PI - 2 * Math.PI * u : role === 'back' ? -Math.PI * u : Math.PI - Math.PI * u;
 }
 
-/** 몸판·모자·판: 세로축 둘레로 감은 면 (origin만큼 올려 놓음) */
-function tubeSheet(tube: Tube, role: SimRole, origin: Vec3, segs: number): Sheet {
+/** 몸판·모자·판: 세로축 둘레로 감은 면 (origin만큼 올려 놓음). wr = false면 손으로 넣는 주름 없이 */
+function tubeSheet(tube: Tube, role: SimRole, origin: Vec3, segs: number, wr = true): Sheet {
   const [ox, oy, oz] = origin;
   return {
     rows: tube.rings.length - 1,
@@ -109,7 +112,7 @@ function tubeSheet(tube: Tube, role: SimRole, origin: Vec3, segs: number): Sheet
       const r = ringAt(tube.rings, k);
       if (tube.kind === 'panel') return [ox + (u - 0.5) * r.rx, oy + r.t, oz + Math.sin(u * Math.PI * 3 + r.t * 0.08) * 0.8];
       const phi = phiOf(tube.kind, role, u);
-      const d = wrinkle(role, phi, r.t, tube.length);
+      const d = wr ? wrinkle(role, phi, r.t, tube.length) : 0;
       return [ox + (r.rx + d) * Math.cos(phi), oy + r.t, oz + (r.rz + d) * Math.sin(phi) + r.cz];
     },
     inside(u, k) {
@@ -304,6 +307,13 @@ export type Draped = {
   axes: Map<ArtPiece, Axis>;
   /** 도안에 요크가 없을 때 몸판과 소매를 어깨에서 잇는 예상 면 */
   impliedYoke: ImpliedYoke | null;
+  /** 천 시뮬레이션으로 늘어뜨린 모양이면 그늘 계산용 점유 격자 */
+  occ?: Occupancy;
+};
+
+export type DrapeOptions = {
+  /** 손으로 넣는 주름 (천 시뮬레이션의 출발 모양에는 끔: 주름은 시뮬레이션이 만듦) */
+  wrinkles?: boolean;
 };
 
 const SEGS: Record<SimRole, number> = { body: 224, front: 112, back: 112, yoke: 200, sleeveL: 96, sleeveR: 96, hat: 160, panel: 64, extra: 0 };
@@ -311,7 +321,8 @@ const SEGS: Record<SimRole, number> = { body: 224, front: 112, back: 112, yoke: 
 /** 예상 요크의 깊이 (겨드랑이 → 목, 옷감을 따라 잰 길이 cm) */
 const IMPLIED_YOKE_DEPTH = 19;
 
-export function drape(pieces: ArtPiece[]): Draped {
+export function drape(pieces: ArtPiece[], opts: DrapeOptions = {}): Draped {
+  const wr = opts.wrinkles !== false;
   const layout = layoutOf(pieces);
   const sheets = new Map<ArtPiece, Sheet>();
   const tubes = new Map<ArtPiece, Tube>();
@@ -329,10 +340,10 @@ export function drape(pieces: ArtPiece[]): Draped {
       axes.set(p, axis);
       sheets.set(
         p,
-        axisSheet(tube.rings, axis, SEGS[role], (phi, t) => wrinkle(role, phi, t, tube.length)),
+        axisSheet(tube.rings, axis, SEGS[role], wr ? (phi, t) => wrinkle(role, phi, t, tube.length) : undefined),
       );
     } else {
-      sheets.set(p, tubeSheet(tube, role, pl.origin, SEGS[role]));
+      sheets.set(p, tubeSheet(tube, role, pl.origin, SEGS[role], wr));
     }
   }
 
