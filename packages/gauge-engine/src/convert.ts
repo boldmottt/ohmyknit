@@ -162,7 +162,10 @@ export function convertPattern(pattern: Pattern, options: ConvertOptions): Conve
         ? { value: originalCastOn, explanation: `바늘 교체 방식: 원본 ${originalCastOn}코 그대로`, withinTolerance: true }
         : convertStitchCount(originalCastOn, kSt, {
             myStGauge: workingGauge.st,
-            ...(repeat !== undefined ? { repeat } : { parity: 'even' as const }),
+            // 원본의 홀짝·가장자리 코를 지켜요 (게이지가 같으면 원본 콧수 그대로)
+            ...(repeat !== undefined
+              ? { repeat, remainder: (piece.construction ?? 'flat') === 'flat' ? originalCastOn % repeat : 0 }
+              : { parity: originalCastOn % 2 === 1 ? ('odd' as const) : ('even' as const) }),
             ...(options.toleranceCm !== undefined ? { toleranceCm: options.toleranceCm } : {}),
           });
     if (!castOnConv.withinTolerance) {
@@ -262,7 +265,8 @@ export function convertPattern(pattern: Pattern, options: ConvertOptions): Conve
         });
       }
 
-      if (chart && !shaped && count % chart.repeatW !== 0) {
+      // 원본 코잡기와 같은 나머지면 도안이 의도한 가장자리 코라서 경고하지 않음
+      if (chart && !shaped && count % chart.repeatW !== 0 && ((piece.construction ?? 'flat') !== 'flat' || count % chart.repeatW !== originalCastOn % chart.repeatW)) {
         warnings.push(
           `${section.name}: 시작 콧수 ${count}코가 차트 반복 ${chart.repeatW}코의 배수가 아니에요. 앞 구간 늘림·줄임을 확인해 주세요.`,
         );

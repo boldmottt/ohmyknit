@@ -1,7 +1,14 @@
+import { lazy, Suspense, useEffect, useMemo, useRef } from 'react';
 import type { ProgressSnapshot } from '@knitcloset/gauge-engine';
 import type { WorkData } from '../api';
+import { artPieces, drawAssembled, type ArtPiece } from '../closet/assembledArt';
 import { convertedPiece, expectedLengthCm, formatHours, overall, pieceStitchProgress, remainingMinutes } from '../derive';
+import { PatternBoard } from '../sim/PatternBoard';
+import { BodyPicker } from '../sim/BodyPicker';
+import { useBody } from '../sim/bodyPref';
 import { pct } from '../ui';
+
+const GarmentViewer = lazy(() => import('../sim/GarmentViewer'));
 
 type Props = {
   data: WorkData;
@@ -10,70 +17,65 @@ type Props = {
   onPick: (pieceId: string) => void;
 };
 
+/** WebGL을 못 쓰는 기기: 조각을 평면으로 조립한 2D 그림 */
+function Flat({ pieces, data, activeId }: { pieces: ArtPiece[]; data: WorkData; activeId?: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const ctx = ref.current?.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(2, 0, 0, 2, 0, 0);
+    ctx.clearRect(0, 0, 560, 500);
+    drawAssembled(ctx, { pieces, palette: data.converted.palette, width: 560, height: 500, activeId });
+  }, [pieces, data, activeId]);
+  return <canvas ref={ref} width={1120} height={1000} className="garment-3d flat" />;
+}
+
 /**
  * 완성본과 비교하기 (기획서 5.4 ②, F4-6).
- * 조각들을 조립된 모습으로 늘어놓고, 콧수 기준 진척도로 아래부터 칠합니다.
+ * 위: 패턴판을 마네킹에 입혀 조립한 3D (드래그로 돌려 보기).
+ * 아래: 패턴판을 평평하게 늘어놓은 2D.
+ * 둘 다 완성 모습은 반투명, 실제로 뜬 단(과 지금 단의 뜬 코)까지만 진하게.
  */
 export function Compare({ data, snapshots, activePieceId, onPick }: Props) {
   const all = overall(data, snapshots);
-  const pieces = data.pieces.map((p) => {
+  const pieces = useMemo(() => artPieces(data, snapshots), [data, snapshots]);
+  const [body, setBody] = useBody(data.project.profileId);
+  const convId = convertedPiece(data, activePieceId)?.id;
+  const pickConv = (cid: string) => {
+    const st = data.pieces.find((p) => convertedPiece(data, p.id)?.id === cid);
+    if (st) onPick(st.id);
+  };
+
+  const chips = data.pieces.map((p) => {
     const conv = convertedPiece(data, p.id)!;
-    const snap = snapshots[p.id]!;
-    const prog = pieceStitchProgress(conv, snap);
-    const maxSt = Math.max(...conv.rows.map((r) => (conv.construction === 'round' ? r.stitchesWorked / 2 : r.stitchesWorked)));
-    return { p, conv, snap, prog, w: maxSt, h: conv.totalRows };
+    return { p, prog: pieceStitchProgress(conv, snapshots[p.id]!) };
   });
-  // 가장 큰 조각을 가운데, 나머지는 양옆에 번갈아
-  const sorted = [...pieces].sort((a, b) => b.w * b.h - a.w * a.h);
-  const center = sorted[0]!;
-  const sides = sorted.slice(1);
-  const left = sides.filter((_, i) => i % 2 === 0);
-  const right = sides.filter((_, i) => i % 2 === 1);
-  const scale = 220 / Math.max(...pieces.map((x) => x.h), 1);
-  const gap = 10;
-  const order = [...left.reverse(), center, ...right];
-  let x = 0;
-  const placed = order.map((it) => {
-    const w = it.w * scale * 0.86;
-    const h = it.h * scale;
-    const r = { ...it, x, y: 240 - h, wPx: w, hPx: h };
-    x += w + gap;
-    return r;
-  });
-  const totalW = x - gap;
   const activeConv = convertedPiece(data, activePieceId);
   const activeSnap = snapshots[activePieceId];
   const remainMin = remainingMinutes(data, all.total - all.done);
+  const flat = <Flat pieces={pieces} data={data} activeId={convId} />;
 
   return (
     <div className="compare">
-      <svg viewBox={`-10 -10 ${totalW + 20} 270`} role="img" aria-label={`전체 ${pct(all.ratio)} 완성`}>
-        {placed.map(({ p, conv, prog, x: px, y, wPx, hPx }) => {
-          const fillH = hPx * prog.ratio;
-          const fromTop = conv.direction === 'top_down';
-          const isActive = p.id === activePieceId;
-          return (
-            <g key={p.id} onClick={() => onPick(p.id)} style={{ cursor: 'pointer' }}>
-              <rect x={px} y={y} width={wPx} height={hPx} rx={6} className="cmp-shape" strokeWidth={isActive ? 3 : 1} />
-              <rect
-                x={px}
-                y={fromTop ? y : y + hPx - fillH}
-                width={wPx}
-                height={fillH}
-                rx={6}
-                className="cmp-fill"
-                style={{ fill: data.converted.palette[0]?.hex }}
-              />
-              <text x={px + wPx / 2} y={y + hPx / 2 - 6} textAnchor="middle" className="cmp-label">
-                {p.name}
-              </text>
-              <text x={px + wPx / 2} y={y + hPx / 2 + 14} textAnchor="middle" className="cmp-label num">
-                {pct(prog.ratio)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
+      <div className="cmp-art">
+        <div className="cmp-3d" aria-label={`전체 ${pct(all.ratio)} 완성. 진한 부분이 실제로 뜬 곳, 반투명한 부분이 남은 곳`}>
+          <Suspense fallback={flat}>
+            <GarmentViewer pieces={pieces} palette={data.converted.palette} activeId={convId} onPick={pickConv} body={body} fallback={flat} />
+          </Suspense>
+          <BodyPicker value={body} onChange={setBody} className="cmp-body" />
+          <p className="cmp-legend">
+            <span className="sw solid" /> 뜬 단 <span className="sw ghost" /> 남은 단 <i>·</i> 드래그해서 돌려 보기
+          </p>
+        </div>
+        <PatternBoard pieces={pieces} palette={data.converted.palette} activeId={convId} onPick={pickConv} height={200} />
+        <div className="cmp-pieces" role="group" aria-label="조각">
+          {chips.map(({ p, prog }) => (
+            <button key={p.id} className={`chip${p.id === activePieceId ? ' on' : ''}`} onClick={() => onPick(p.id)}>
+              {p.name} <span className="num">{pct(prog.ratio)}</span>
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="cmp-sum">
         <b>전체 {pct(all.ratio)} 완성</b>
         {activeConv && activeSnap && (
@@ -85,7 +87,7 @@ export function Compare({ data, snapshots, activePieceId, onPick }: Props) {
           남은 코 약 {Math.max(0, all.total - all.done).toLocaleString('ko-KR')}코
           {remainMin !== null ? ` · 약 ${formatHours(remainMin)}` : ''}
         </div>
-        <div className="muted small">조각을 누르면 그 조각으로 이동해요</div>
+        <div className="muted small">3D나 패턴판에서 조각을 누르면 그 조각으로 이동해요</div>
       </div>
     </div>
   );

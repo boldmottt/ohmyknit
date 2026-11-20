@@ -89,8 +89,9 @@ export async function suggestGauge(
     ctx.yarnWeight ?? best.yarn_weight,
     ctx.needleMaterial ?? best.needle_material,
   );
-  const kSt = coef?.k_st ?? 1;
-  const kRow = coef?.k_row ?? 1;
+  // 예전에 잘못 학습된 값이 있어도 추천이 터무니없어지지 않게 범위 안으로
+  const kSt = clampK(coef?.k_st ?? 1);
+  const kRow = clampK(coef?.k_row ?? 1);
   const round1 = (n: number) => Math.round(n * 10) / 10;
   return {
     st: round1(g.st * kSt),
@@ -106,6 +107,14 @@ export async function suggestGauge(
       : `스와치 ${g.st}코 ${g.row}단 (${best.yarn_name || best.yarn_weight}, ${best.needle_mm}mm${best.sts_post ? ', 블로킹 후' : ''})`,
   };
 }
+
+/**
+ * 완성 실측이 예상과 이 범위를 벗어나면 학습에 쓰지 않아요.
+ * 실제 손 차이는 보통 ±10% 안이고, 이보다 크면 오타(91 → 9.1), 단위(cm ↔ mm), 단면·둘레 혼동일 가능성이 커요.
+ */
+export const LEARN_RATIO_MIN = 0.75;
+export const LEARN_RATIO_MAX = 1.33;
+const clampK = (k: number) => Math.min(LEARN_RATIO_MAX, Math.max(LEARN_RATIO_MIN, k));
 
 export const WIDTH_KEY = /둘레|너비|폭|width|chest|bust/i;
 export const LENGTH_KEY = /장|길이|length/i;
@@ -130,12 +139,25 @@ export async function learnFromFinished(
   },
   /** 주어지면 계수 저장을 바로 실행하지 않고 여기에 담아요 (완성 기록과 한 묶음으로 저장하려고) */
   collect?: D1PreparedStatement[],
-): Promise<{ kActualSt?: number; kActualRow?: number; coefficient?: { kSt: number; kRow: number; samples: number } }> {
+): Promise<{
+  kActualSt?: number;
+  kActualRow?: number;
+  coefficient?: { kSt: number; kRow: number; samples: number };
+  /** 예상과 너무 달라서 학습에서 뺀 치수 */
+  ignored?: { key: string; measured: number; expected: number }[];
+}> {
+  const ignored: { key: string; measured: number; expected: number }[] = [];
   const ratios = (re: RegExp) => {
     const list: number[] = [];
     for (const [key, actual] of Object.entries(input.measured)) {
       const exp = input.expected[key];
-      if (re.test(key) && exp && actual > 0) list.push(exp / actual);
+      if (!re.test(key) || !exp || !(actual > 0)) continue;
+      const r = exp / actual;
+      if (r < LEARN_RATIO_MIN || r > LEARN_RATIO_MAX) {
+        if (!ignored.some((x) => x.key === key)) ignored.push({ key, measured: actual, expected: exp });
+        continue;
+      }
+      list.push(r);
     }
     return list.length ? list.reduce((a, b) => a + b, 0) / list.length : undefined;
   };
@@ -144,7 +166,7 @@ export async function learnFromFinished(
   const actualSt = wr !== undefined ? input.usedSt * wr : undefined;
   const actualRow = lr !== undefined ? input.usedRow * lr : undefined;
   if (!input.swatchSt || !input.swatchRow || (actualSt === undefined && actualRow === undefined)) {
-    return { kActualSt: actualSt, kActualRow: actualRow };
+    return { kActualSt: actualSt, kActualRow: actualRow, ...(ignored.length ? { ignored } : {}) };
   }
 
   const existing = await db.first<CoefficientRow>(
@@ -175,5 +197,6 @@ export async function learnFromFinished(
     kActualSt: actualSt !== undefined ? actualSt / input.swatchSt : undefined,
     kActualRow: actualRow !== undefined ? actualRow / input.swatchRow : undefined,
     coefficient: { kSt: st.k, kRow: row.k, samples: st.sampleCount },
+    ...(ignored.length ? { ignored } : {}),
   };
 }

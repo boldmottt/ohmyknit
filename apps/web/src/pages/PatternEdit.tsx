@@ -6,6 +6,7 @@ import { parsePattern, TECHNIQUE_LABEL, type Technique } from '@knitcloset/patte
 import { api, fileUrl } from '../api';
 import { blankPattern, DRAFT_KEY } from './Patterns';
 import { getStoredProfile, NumInput, useToast } from '../ui';
+import { parseLooseJson } from '../derive';
 
 /* 편집 중인 도안은 느슨한 형태(입력 중 빈 값 허용)로 다루고 저장할 때 검증합니다 */
 type SV = number | Record<string, number>;
@@ -42,6 +43,8 @@ function normalize(p: unknown): EPattern {
   };
 }
 
+const EDIT_DRAFT_PREFIX = 'kc.patternEdit:';
+
 const TECHS = Object.keys(TECHNIQUE_LABEL) as Technique[];
 const EVENT_LABEL: Record<EEvent['kind'], string> = { bindoff: '코막음', split: '분리', pickup: '코줍기', color: '배색 변경', note: '메모', checkin: '실측' };
 
@@ -60,13 +63,48 @@ export default function PatternEdit() {
   const [json, setJson] = useState('');
   const [errors, setErrors] = useState('');
   const [saving, setSaving] = useState(false);
+  /** 불러온 그대로의 도안 (이것과 다르면 저장 안 된 변경이 있는 것) */
+  const [baseline, setBaseline] = useState('');
+  const draftKey = useRef('');
+
+  /** 입력하던 내용이 기기에 남아 있으면 되살림 */
+  const loadBase = (base: EPattern, key: string) => {
+    draftKey.current = EDIT_DRAFT_PREFIX + key;
+    setBaseline(JSON.stringify(base));
+    setPat(base);
+    try {
+      const raw = localStorage.getItem(draftKey.current);
+      if (!raw) return;
+      const d = JSON.parse(raw) as { pat: EPattern; json?: string; at: number };
+      if (JSON.stringify(d.pat) === JSON.stringify(base) && d.json === undefined) return;
+      setPat(normalize(d.pat));
+      if (d.json !== undefined) {
+        setJson(d.json);
+        setMode('json');
+      }
+      toast({
+        text: `저장하지 않고 나갔던 입력을 되살렸어요 (${new Date(d.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' })})`,
+        ms: 10000,
+        action: {
+          label: '버리기',
+          run: () => {
+            localStorage.removeItem(draftKey.current);
+            setPat(base);
+            setMode('form');
+          },
+        },
+      });
+    } catch {
+      /* 초안을 못 읽으면 그냥 넘어감 */
+    }
+  };
 
   useEffect(() => {
     if (id) {
       void api.pattern(id).then((r) => {
-        setPat(normalize(r.pattern));
         setFileKey(r.fileKey ?? undefined);
         setSourceType(r.sourceType);
+        loadBase(normalize(r.pattern), id);
       });
       return;
     }
@@ -74,7 +112,7 @@ export default function PatternEdit() {
       try {
         const d = JSON.parse(sessionStorage.getItem(DRAFT_KEY) ?? 'null');
         if (d) {
-          setPat(normalize(d.pattern));
+          loadBase(normalize(d.pattern), `review:${d.fileKey ?? ''}`);
           setNotes(d.reviewNotes ?? []);
           setFileKey(d.fileKey);
           setSourceType(d.sourceType ?? 'manual');
@@ -85,8 +123,28 @@ export default function PatternEdit() {
         /* 무시 */
       }
     }
-    setPat(normalize(blankPattern()));
+    loadBase(normalize(blankPattern()), 'new');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, sp]);
+
+  // 입력할 때마다 기기에 임시 저장 (다른 화면에 갔다 오거나 새로고침해도 남게)
+  const dirty = !!pat && !!baseline && (JSON.stringify(pat) !== baseline || (mode === 'json' && json !== JSON.stringify(pat, null, 2)));
+  useEffect(() => {
+    if (!pat || !draftKey.current || !baseline) return;
+    try {
+      if (dirty) localStorage.setItem(draftKey.current, JSON.stringify({ pat, ...(mode === 'json' ? { json } : {}), at: Date.now() }));
+      else localStorage.removeItem(draftKey.current);
+    } catch {
+      /* 저장 공간이 없으면 임시 저장 없이 동작 */
+    }
+  }, [pat, json, mode, dirty, baseline]);
+  useEffect(() => {
+    const h = (e: BeforeUnloadEvent) => {
+      if (dirty) e.preventDefault();
+    };
+    window.addEventListener('beforeunload', h);
+    return () => window.removeEventListener('beforeunload', h);
+  }, [dirty]);
 
   const preview = useMemo(() => {
     if (!pat) return null;
@@ -112,7 +170,7 @@ export default function PatternEdit() {
     let candidate: unknown = pat;
     if (mode === 'json') {
       try {
-        candidate = JSON.parse(json);
+        candidate = parseLooseJson(json);
       } catch (e) {
         setErrors(`JSON 형식 오류: ${(e as Error).message}`);
         return;
@@ -129,6 +187,12 @@ export default function PatternEdit() {
       if (id) await api.updatePattern(id, candidate, fileKey);
       else await api.createPattern(candidate, { profileId: getStoredProfile() ?? undefined, sourceType, fileKey });
       sessionStorage.removeItem(DRAFT_KEY);
+      try {
+        localStorage.removeItem(draftKey.current);
+      } catch {
+        /* 무시 */
+      }
+      setBaseline('');
       await qc.invalidateQueries({ queryKey: ['patterns'] });
       toast({ text: '도안을 저장했어요 📜' });
       nav('/patterns');
@@ -151,7 +215,7 @@ export default function PatternEdit() {
             onClick={() => {
               if (mode === 'json') {
                 try {
-                  setPat(normalize(JSON.parse(json)));
+                  setPat(normalize(parseLooseJson(json)));
                 } catch {
                   setErrors('JSON을 고친 뒤 전환해 주세요');
                   return;

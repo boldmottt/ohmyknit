@@ -398,24 +398,100 @@
   gap: 12px;
   overflow: auto;
 }
-.compare svg {
+.cmp-art {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.cmp-art {
   width: 100%;
-  max-height: 46vh;
 }
-.cmp-shape {
-  fill: var(--bg);
-  stroke: var(--accent);
-  stroke-dasharray: 5 4;
+/* 3D 조립 시뮬레이션 */
+.cmp-3d {
+  position: relative;
+  width: 100%;
+  height: min(46vh, 420px);
+  border-radius: 14px;
+  background:
+    radial-gradient(60% 60% at 50% 42%, rgba(255, 253, 249, 0.9), transparent 75%),
+    color-mix(in srgb, var(--accent) 4%, #efe8df);
+  overflow: hidden;
 }
-.cmp-fill {
-  opacity: 0.85;
+.garment-3d {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+  touch-action: none;
 }
-.cmp-label {
-  font-size: 13px;
-  fill: var(--ink);
-  paint-order: stroke;
-  stroke: var(--paper);
-  stroke-width: 3px;
+.garment-3d:active {
+  cursor: grabbing;
+}
+.garment-3d canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+.garment-3d.flat {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  cursor: default;
+}
+.cmp-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--muted, #8c8178);
+  pointer-events: none;
+}
+.cmp-legend i {
+  font-style: normal;
+  opacity: 0.6;
+}
+.cmp-legend .sw {
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--ink);
+}
+.cmp-legend .sw.ghost {
+  opacity: 0.28;
+  margin-left: 6px;
+}
+/* 패턴판 (2D) */
+.pattern-board {
+  display: block;
+  width: 100%;
+  border-radius: 12px;
+  background: #f6f1ea;
+  border: 1px solid var(--line, rgba(0, 0, 0, 0.08));
+  cursor: pointer;
+}
+.cmp-pieces {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.cmp-pieces .chip {
+  border: 1px solid var(--line, var(--panel-border));
+  background: transparent;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.cmp-pieces .chip.on {
+  background: var(--ink);
+  color: var(--paper, #fff);
 }
 .cmp-sum {
   text-align: center;
@@ -931,16 +1007,6 @@
   border-top: 1px solid var(--line);
   padding: 10px clamp(12px, 2vw, 24px);
 }
-.cmp-shape {
-  fill: transparent;
-  stroke: var(--ink);
-  stroke-dasharray: 3 4;
-}
-.cmp-label {
-  letter-spacing: 0.1em;
-  font-weight: 300;
-}
-
 /* 진행 도크 */
 .dock {
   padding: clamp(14px, 2vw, 28px);
@@ -1183,4 +1249,56 @@ button.sync {
   padding: 6px 0;
   text-decoration: underline dotted;
   text-underline-offset: 4px;
+}
+
+/* 천 시뮬레이션이 도는 동안 작은 안내 */
+.garment-settling {
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  z-index: 1;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: #5b4f47;
+  background: rgba(255, 252, 247, 0.82);
+  pointer-events: none;
+  animation: settling 1.6s ease-in-out infinite;
+}
+@keyframes settling {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* 마네킹 몸 고르기 (여자 · 남자) */
+.body-pick {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 999px;
+  background: rgba(255, 252, 247, 0.86);
+  border: 1px solid rgba(60, 45, 35, 0.14);
+}
+.body-pick button {
+  border: 0;
+  background: transparent;
+  padding: 5px 13px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 0.76rem;
+  letter-spacing: 0.06em;
+  color: #6f645c;
+  cursor: pointer;
+}
+.body-pick button[aria-checked='true'] {
+  background: #3b322d;
+  color: #fff;
+}
+.cmp-body {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 1;
 }

@@ -513,11 +513,11 @@ export default function Work() {
       {dialog === 'finish' && (
         <FinishDialog
           projectId={data.project.id}
-          finishedKeys={Object.keys(data.finished ?? {})}
+          design={data.finished ?? {}}
           onClose={() => setDialog(null)}
           onDone={(msg) => {
             setDialog(null);
-            toast({ text: msg, ms: 6000 });
+            toast({ text: msg, ms: 9000 });
             nav('/');
           }}
         />

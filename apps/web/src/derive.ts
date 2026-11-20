@@ -247,3 +247,29 @@ export function formatHours(min: number): string {
   const h = min / 60;
   return h < 10 ? `${h.toFixed(1)}시간` : `${Math.round(h)}시간`;
 }
+
+/**
+ * AI가 준 JSON을 너그럽게 읽어요: 앞뒤 설명글, ```json 코드 표시, "확인 필요" 목록이 붙어 있어도
+ * 첫 { 부터 짝이 맞는 } 까지만 꺼내서 읽습니다.
+ */
+export function parseLooseJson(text: string): unknown {
+  const t = text.trim();
+  try {
+    return JSON.parse(t);
+  } catch (first) {
+    const start = t.indexOf('{');
+    if (start < 0) throw first;
+    let depth = 0;
+    let inStr = false;
+    for (let i = start; i < t.length; i++) {
+      const ch = t[i];
+      if (inStr) {
+        if (ch === '\\') i++;
+        else if (ch === '"') inStr = false;
+      } else if (ch === '"') inStr = true;
+      else if (ch === '{') depth++;
+      else if (ch === '}' && --depth === 0) return JSON.parse(t.slice(start, i + 1));
+    }
+    throw first;
+  }
+}

@@ -1,8 +1,13 @@
 import { assertPositive, stitchesToCm } from './gauge.js';
 
 export type StitchConversionOptions = {
-  /** 배색 반복 단위(코). 주어지면 결과는 반드시 이 값의 배수 */
+  /** 배색 반복 단위(코). 주어지면 결과는 반드시 이 값의 배수 (+ remainder) */
   repeat?: number;
+  /**
+   * 반복에 들어가지 않는 가장자리 코 (예: 12코 반복 + 양끝 1코 → 97코면 1).
+   * 원본 도안의 나머지를 그대로 지켜서 무늬가 가운데 오도록 합니다. 기본 0
+   */
+  remainder?: number;
   /** 반복 단위가 없을 때 적용할 홀짝 조건 */
   parity?: 'even' | 'odd' | 'any';
   /** 내 코 게이지 (10cm당 코 수). 치수 오차 계산에 사용 */
@@ -69,8 +74,11 @@ export function convertStitchCount(
     if (!Number.isInteger(options.repeat)) {
       throw new RangeError(`repeat must be an integer (got ${options.repeat})`);
     }
-    value = nearestMultiple(raw, options.repeat);
-    rule = `${options.repeat}코 반복의 배수 (${options.repeat}×${value / options.repeat})`;
+    const rem = Math.max(0, Math.round(options.remainder ?? 0)) % options.repeat;
+    value = nearestMultiple(Math.max(options.repeat, raw - rem), options.repeat) + rem;
+    rule = rem
+      ? `${options.repeat}코 반복 × ${(value - rem) / options.repeat} + 가장자리 ${rem}코`
+      : `${options.repeat}코 반복의 배수 (${options.repeat}×${value / options.repeat})`;
   } else {
     const parity = options.parity ?? 'any';
     value = roundWithParity(raw, parity);

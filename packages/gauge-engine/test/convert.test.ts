@@ -156,3 +156,36 @@ describe('코 없음 칸이 있는 차트 (소용돌이 정수리)', () => {
     expect(hat.rows.at(-1)!.stitchCount).toBe(8);
   });
 });
+
+describe('원본 콧수의 홀짝·가장자리 코 지키기', () => {
+  const vest = (castOn: number, chart: boolean, construction: 'flat' | 'round' = 'flat') =>
+    parsePattern({
+      title: 'v',
+      gauge: { st: 22, row: 30 },
+      sizes: [{ label: 'S' }],
+      pieces: [{ id: 'back', name: '뒤판', construction, castOn, sections: [
+        { name: '몸통', rows: 20 },
+        ...(chart ? [{ name: '무늬', rows: 4, chart: { grid: [Array(12).fill(0), Array(12).fill(1)] } }] : []),
+      ] }],
+    });
+  const castOn = (p: ReturnType<typeof vest>, st: number) =>
+    convertPattern(p, { size: 'S', myGauge: { st, row: 30 } }).pieces[0]!;
+
+  it('게이지가 같으면 원본 콧수 그대로 (홀수도)', () => {
+    expect(castOn(vest(97, false), 22).castOn.value).toBe(97);
+    expect(castOn(vest(97, true), 22).castOn.value).toBe(97);
+    expect(castOn(vest(97, true), 22).warnings).toEqual([]);
+  });
+
+  it('홀수 도안은 홀수로, 평면 배색은 반복 + 원본 가장자리 코로', () => {
+    expect(castOn(vest(97, false), 25).castOn.value % 2).toBe(1);
+    const c = castOn(vest(97, true), 25).castOn.value; // 97 × 25/22 = 110.2
+    expect(c % 12).toBe(1);
+    expect(c).toBe(109);
+  });
+
+  it('원통뜨기는 가장자리가 없어서 반복 배수로', () => {
+    expect(castOn(vest(96, true, 'round'), 25).castOn.value % 12).toBe(0);
+  });
+});
+

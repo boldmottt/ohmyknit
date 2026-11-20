@@ -197,7 +197,8 @@ function stitchSprite(color: string, kind: StitchKind): SpriteCanvas | null {
   return c;
 }
 
-function drawStitch(ctx: Ctx, x: number, y: number, w: number, h: number, color: string, kind: StitchKind) {
+/** 코 하나 (스프라이트로 찍음). 3D 원단 텍스처를 그릴 때도 씀 */
+export function drawStitch(ctx: Ctx, x: number, y: number, w: number, h: number, color: string, kind: StitchKind) {
   const sprite = stitchSprite(color, kind);
   if (sprite) {
     // 위아래 코가 살짝 겹쳐야 실제 편물처럼 촘촘해 보여요

@@ -194,10 +194,39 @@ api.get('/profiles/:id/suggest-gauge', async (c) => {
   );
 });
 
+/** 완성 실측으로 배운 보정 계수 지우기 (잘못 넣은 실측을 되돌릴 때) */
+api.delete('/profiles/:id/coefficients', async (c) => {
+  const q = (k: string) => c.req.query(k) ?? '';
+  await c.var.db.run(
+    'DELETE FROM hand_coefficients WHERE profile_id = ? AND technique = ? AND yarn_weight = ? AND needle_material = ?',
+    c.req.param('id'),
+    q('technique'),
+    q('yarnWeight'),
+    q('needleMaterial'),
+  );
+  return c.json({ ok: true });
+});
+
+/** 스와치 게이지 값: 비었으면 null, 있으면 10cm 안에 1~80코(단) */
+const gaugeField = (v: unknown, name: string): number | null => {
+  if (v === undefined || v === null || v === '') return null;
+  const n = num(v, name);
+  if (n < 1 || n > 80) throw new Error(`${name}는 10cm 안의 코·단 수예요 (1~80)`);
+  return n;
+};
+
 api.post('/profiles/:id/swatches', async (c) => {
   const b = await body<Partial<ReturnType<typeof swatchOut>>>(c);
   if (!b.needleMm) throw new Error('바늘 굵기를 입력해 주세요');
-  if (!(b.stsPre || b.stsPost) || !(b.rowsPre || b.rowsPost)) throw new Error('게이지(코·단)를 입력해 주세요');
+  const needle = num(b.needleMm, '바늘 굵기');
+  if (needle < 0.5 || needle > 30) throw new Error('바늘 굵기는 0.5~30mm 사이로 넣어 주세요');
+  const g = {
+    stsPre: gaugeField(b.stsPre, '블로킹 전 코'),
+    rowsPre: gaugeField(b.rowsPre, '블로킹 전 단'),
+    stsPost: gaugeField(b.stsPost, '블로킹 후 코'),
+    rowsPost: gaugeField(b.rowsPost, '블로킹 후 단'),
+  };
+  if (!(g.stsPre || g.stsPost) || !(g.rowsPre || g.rowsPost)) throw new Error('게이지(코·단)를 입력해 주세요');
   const id = uid();
   await c.var.db.run(
     `INSERT INTO swatches (id, profile_id, yarn_name, yarn_weight, fiber, needle_mm, needle_material, technique,
@@ -208,13 +237,13 @@ api.post('/profiles/:id/swatches', async (c) => {
     b.yarnName ?? '',
     b.yarnWeight ?? 'dk',
     b.fiber ?? '',
-    num(b.needleMm, 'needleMm'),
+    needle,
     b.needleMaterial ?? 'any',
     b.technique ?? 'stockinette',
-    b.stsPre ?? null,
-    b.rowsPre ?? null,
-    b.stsPost ?? null,
-    b.rowsPost ?? null,
+    g.stsPre,
+    g.rowsPre,
+    g.stsPost,
+    g.rowsPost,
     b.photoKey ?? null,
     b.note ?? '',
     now(),
