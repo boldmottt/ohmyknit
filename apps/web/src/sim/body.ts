@@ -1,19 +1,21 @@
-import { armAxis, axisSheet, ringAt, type Axis, type Sheet, type Vec3 } from './drape';
+import { axisSheet, ringAt, type Axis, type Sheet, type Vec3 } from './drape';
 import { smoothKeys } from './form';
-import { ARM_ANGLE, type Layout, type Placement, type Ring, type SimRole, type Tube } from './shape';
+import { type Layout, type Ring, type SimRole, type Tube } from './shape';
 import type { ArtPiece } from '../closet/assembledArt';
 
 /**
  * 사람 모양 마네킹 (three.js 없이 숫자만 — 화면에 그릴 때도, 천 시뮬레이션의 부딪힘에도 같은 모양).
- * 매장 패션 마네킹 스타일: 무광 회색, 에그헤드(콧날만 있는 얼굴), 길고 가는 목, 이음선.
+ * 매장 패션 마네킹 스타일: 무광 회색, 넓은 달걀형 에그헤드(콧대만 있는 얼굴), 도톰한 목, 이음선.
+ * 비율은 레퍼런스 사진(패션 마네킹)을 머리 높이 기준으로 재서 맞췄어요 (턱·어깨·가슴·밑가슴·배꼽·사타구니 높이, 머리·목·어깨 너비).
  *
  * 몸통은 높이마다 단면(앞·뒤 깊이가 다른 둥근 사각형)을 쌓고(로프트) 가슴·견갑골·척추 골·엉덩이·쇄골·
- * 목빗근·배꼽 같은 굴곡을 더해요. 목은 턱 끝보다 뒤에서 올라가 턱 밑이 드러나고 뒤통수가 목덜미 위로 나와요.
- * 머리는 덩어리(머리뼈·뒤통수·갸름한 얼굴·콧날·귀)를 부드럽게 합친 모양을 높이마다 잘라 단면으로.
- * 팔은 소매 축을 따라 어깨 → 이두 → 팔꿈치 → 아래팔 → 손목, 손은 손바닥·엄지·손가락 넷,
- * 다리는 엉덩이 안에서 무릎·종아리·발목·발까지, 발밑에 얇은 판.
+ * 목빗근·배꼽·겨드랑이 같은 굴곡을 더해요. 목은 턱 끝보다 뒤에서 올라가 턱 밑이 드러나고 목덜미는 뒤통수 속으로.
+ * 머리는 덩어리(머리뼈·뒤통수·넓은 달걀 얼굴·콧대·귀)를 부드럽게 합친 모양을 높이마다 잘라 단면으로.
+ * 어깨는 몸통의 둥근 어깨 공(삼각근)으로 승모근 비탈에서 끊김 없이 이어지고, 팔은 그 아래에서 이두 → 팔꿈치 → 아래팔 → 손목,
+ * 손은 손바닥·엄지·손가락 넷.
+ * 옷을 입히면 소매 축을 따라, 빈 마네킹은 위팔을 몸 옆에 곧게 내림. 다리는 엉덩이 안에서 무릎·종아리·발목·발까지, 발밑에 얇은 판.
  *
- * 치수는 패션 마네킹 비율(여자: 가슴 85 · 허리 59 · 엉덩이 89, 남자: 가슴 97 · 허리 74 · 엉덩이 88)이고,
+ * 치수는 패션 마네킹 비율(여자: 가슴 82 · 허리 60 · 엉덩이 89, 남자: 가슴 93 · 허리 75 · 엉덩이 87)이고,
  * 옷의 가슴둘레에 맞춰 크기를 줄이거나 키워요 (옷보다 6% 작게 = 보통 여유).
  * 단위 cm, y 위, +z 앞, +x 오른쪽. 높이는 겨드랑이 = 0 기준.
  */
@@ -28,30 +30,30 @@ type Section = { y: number; w: number; df: number; db: number; cz?: number; n?: 
 /** 단면에 더하는 굴곡: 높이 y 근처(아래 below, 위 above 폭), 각도 phi(도, 90 = 앞) 근처(spread 폭)에 amp cm */
 type Bump = { y: number; below: number; above: number; phi: number; spread: number; amp: number; p?: number };
 /**
- * 가슴: 꼭지 높이 y, 각도 phi(도), 반너비 w, 위로 up·아래로 down 퍼짐, 튀어나옴 d (cm).
- * 위쪽은 쇄골 아래에서 완만하게 내려오고, 아래쪽은 둥글게 차서 몸과 만나는 곳에서 또렷하게 접힘
+ * 가슴: 꼭지 높이 y, 각도 phi(도), 안쪽(가운데 골 쪽)·바깥 반너비 wIn·wOut, 위로 up·아래로 down 퍼짐, 튀어나옴 d (cm).
+ * 둥근 돔: 위쪽은 쇄골 아래에서 완만하게 차오르고, 아래쪽은 둥글게 차서 몸과 만나는 곳에서 접히고(밑가슴),
+ * 바깥은 옆구리로 부드럽게, 안쪽은 둥글게 (두 가슴 사이는 얕은 골)
  */
-type Breast = { y: number; phi: number; w: number; up: number; down: number; d: number };
+type Breast = { y: number; phi: number; wIn: number; wOut: number; up: number; down: number; d: number };
 
 function breastAt(b: Breast, y: number, phi: number, R: number): number {
   const v = y - b.y;
-  if (v > b.up) return 0;
+  if (v > b.up || v < -b.down) return 0;
   let dp = phi - (b.phi * Math.PI) / 180;
   dp = Math.atan2(Math.sin(dp), Math.cos(dp));
   const u = dp * R;
-  // 아래 주름은 한쪽마다 U자: 가슴 가운데 아래가 가장 낮고 옆·가운데 골로 갈수록 올라감
-  const uw = b.w * 1.05;
-  const low = Math.abs(u) < uw ? b.down * Math.sqrt(1 - (u / uw) ** 2) : 0;
-  if (v < -low) return 0;
-  // 위: 꼭지에서 기울기 0으로 시작해 완만하게 0까지 / 아래: 둥근 반원 (끝에서 또렷한 주름)
-  const t = v / b.up;
-  // 위는 둥글게 차오르다 쇄골 쪽으로 완만히 (처져 보이지 않게), 아래는 둥근 반원 → 몸과 만나는 곳에서 접힘
-  // 주름은 가슴 가운데 아래에서만 또렷하고, 가운데 골·옆으로 갈수록 부드럽게 (가운데에서 꼬집힌 자국이 없게)
-  const sharp = 0.85 + 1.15 * Math.min(1, (u / uw) ** 2);
-  const fv = v >= 0 ? Math.pow(Math.max(0, 1 - t * t), 1.5) : Math.pow(Math.max(0, 1 - (v / low) ** 2), sharp);
-  const su = b.w * 0.42 * (v >= 0 ? 1 - 0.25 * t : 1);
-  const fu = Math.exp(-0.5 * (u / su) ** 2);
-  return b.d * fv * fu;
+  // 오른쪽 가슴(phi < 90)은 phi가 커지는 쪽이 안쪽
+  const inward = (b.phi < 90 ? u : -u) > 0;
+  const U = Math.abs(u) / (inward ? b.wIn : b.wOut);
+  const V = v >= 0 ? v / b.up : -v / b.down;
+  const q = U * U + V * V;
+  if (q >= 1) return 0;
+  // 가장자리로 갈 때 낮아지는 모양 (지수가 작을수록 끝까지 둥글게 차서 또렷이 접힘):
+  // 위 3 (쇄골 아래에서 완만한 비탈), 아래 0.95 (둥글게 차서 밑가슴 주름), 바깥 2 (옆구리로 스며듦), 안 1.6
+  const s2 = q > 1e-9 ? (V * V) / q : 0;
+  const side = inward ? 1.5 : 2;
+  const p = side + ((v >= 0 ? 2.3 : 1.15) - side) * s2;
+  return b.d * Math.pow(1 - q, p);
 }
 
 type P3 = [number, number, number];
@@ -61,7 +63,7 @@ type P3 = [number, number, number];
  * 눈·입술·귀를 새기면 오히려 우스꽝스러워서(웃는 얼굴처럼 보임) 매장 마네킹처럼 코만 남김
  */
 type Part =
-  | { skull: { y: number; z: number; w: number; h: number; f: number; b: number; n: number } }
+  | { skull: { y: number; z: number; w: number; h: number; f: number; b: number; n: number; nv?: number } }
   | { e: P3; r: P3; k: number; sym?: boolean; sub?: boolean; tilt?: number; taper?: number; keel?: number }
   | { rod: [P3, number, P3, number]; k: number; sym?: boolean };
 type FaceSpec = Part[];
@@ -75,8 +77,21 @@ type Spec = {
   face: FaceSpec;
   /** 턱 끝 높이 (겨드랑이 기준) */
   chin: number;
-  /** 팔: 어깨 꼭대기에서 잰 거리 s, 옆 반지름, 앞뒤 반지름 */
+  /** 팔 (옷을 입힐 때, 소매 길이에 맞춘 길이): 어깨 꼭대기에서 잰 거리 s, 옆 반지름, 앞뒤 반지름 */
   arm: [number, number, number][];
+  /**
+   * 빈 마네킹 팔 (사람 비율 길이): 굵기(arm과 같은 꼴), 손목·이음선 자리 s, 어깨 꼭대기 자리 [x, y, z],
+   * 팔꿈치 s, 아래팔 방향 [바깥, 아래, 앞]
+   */
+  free: {
+    arm: [number, number, number][];
+    wrist: number;
+    seams: number[];
+    top: [number, number, number];
+    upper: [number, number, number];
+    elbow: number;
+    fore: [number, number, number];
+  };
   /** 다리: 허벅지 윗끝(엉덩이 안)·무릎·발목 [가운데에서 떨어진 거리, 높이], 발바닥 높이, 위에서 잰 거리 s별 [옆·앞뒤 반지름, 뒤로 치우침(종아리)], 발 */
   leg: {
     top: [number, number];
@@ -100,80 +115,92 @@ type Spec = {
 
 const FEMALE: Spec = {
   torso: [
-    { y: -57.6, w: 2, df: 1.5, db: 2 },
-    // 몸통 아랫단은 허벅지 윗머리를 덮을 만큼 내려와 엉덩이 → 허벅지 선이 꺾이지 않게
-    { y: -55.9, w: 11, df: 5.2, db: 7.6, cz: -0.3 },
-    { y: -52.6, w: 15.8, df: 7.4, db: 9.8, cz: -0.4, n: 2.35 },
-    // 골반이 넓고 허리가 잘록한 모래시계 (패션 마네킹: 가슴 85 · 허리 61 · 엉덩이 89)
-    { y: -45, w: 16.6, df: 8.4, db: 10.2, cz: -0.4, n: 2.3 },
-    { y: -38, w: 15.8, df: 8.2, db: 9.6, cz: -0.2, n: 2.25 },
-    { y: -31, w: 12.8, df: 7.9, db: 8.3, cz: 0, n: 2.15 },
-    { y: -24, w: 10.5, df: 7.8, db: 7.6, cz: 0.15, n: 2.1 },
-    { y: -17, w: 11.7, df: 8.1, db: 7.6, cz: 0.3, n: 2.15 },
-    { y: -11, w: 12.8, df: 8.3, db: 8.3, cz: 0.4, n: 2.3 },
-    // 옆으로는 좁고 앞뒤로 도톰한 가슴통 (어깨 끝 아래가 오목해야 팔이 그 밑에서 나와 보임)
-    { y: -4, w: 12.8, df: 8.4, db: 9.1, cz: 0.3, n: 2.3 },
-    { y: 1, w: 12.1, df: 8.5, db: 9.1, cz: 0.1, n: 2.3 },
-    // 몸통은 어깨뼈 끝까지만, 둥근 어깨 끝은 팔 윗머리(삼각근)가 이룸 → 승모근 비탈 → 목
-    { y: 3.6, w: 12.4, df: 7.8, db: 8.3, cz: 0, n: 2.3 },
-    { y: 5.8, w: 12.7, df: 7.1, db: 7.7, cz: -0.15, n: 2.3 },
-    { y: 7.4, w: 12.5, df: 6.4, db: 7.1, cz: -0.3, n: 2.3 },
-    { y: 8.8, w: 11.6, df: 5.7, db: 6.5, cz: -0.4, n: 2.25 },
-    { y: 10.1, w: 9.8, df: 5.1, db: 5.9, cz: -0.5, n: 2.2 },
-    { y: 11.2, w: 7.9, df: 4.7, db: 5.4, cz: -0.6, n: 2.1 },
-    { y: 12.3, w: 6, df: 4.4, db: 4.9, cz: -0.7, n: 2 },
-    // 목: 길고 아주 가늘게(머리 너비의 반 남짓), 턱 끝보다 뒤에서 올라가 턱 밑이 드러남. 뒤쪽은 뒤통수 밑으로
-    { y: 13.3, w: 5, df: 4.2, db: 4.7, cz: -0.85, n: 2 },
-    { y: 14.4, w: 4.4, df: 3.95, db: 4.3, cz: -1.05, n: 2 },
-    { y: 17, w: 4.05, df: 3.8, db: 4.05, cz: -1.35, n: 2 },
-    { y: 19.8, w: 4, df: 3.7, db: 4, cz: -1.55, n: 2 },
-    { y: 22.8, w: 4, df: 3.6, db: 4.1, cz: -1.85, n: 2 },
-    { y: 25.2, w: 3.8, df: 3.2, db: 4, cz: -2.3, n: 2 },
-    { y: 26.4, w: 2.5, df: 2, db: 2.7, cz: -2.5, n: 2 },
-    { y: 26.8, w: 0.5, df: 0.5, db: 0.5, cz: -2.5 },
+    { y: -53.4, w: 2, df: 1.5, db: 2 },
+    // 몸통 아랫단은 허벅지 윗머리를 덮을 만큼 내려와 엉덩이 → 허벅지 선이 꺾이지 않게 (사타구니는 엉덩이 가장 넓은 곳 바로 아래)
+    { y: -51.8, w: 10.5, df: 5, db: 6.8, cz: -0.3 },
+    { y: -49, w: 15.4, df: 7.2, db: 9.2, cz: -0.4, n: 2.35 },
+    // 골반이 넓고 허리가 잘록한 모래시계: 허리 바로 아래에서 엉덩이가 둥글게 퍼짐 (패션 마네킹: 가슴 84 · 허리 60 · 엉덩이 89)
+    { y: -44, w: 16.5, df: 8.3, db: 10.2, cz: -0.4, n: 2.3 },
+    { y: -38.5, w: 16, df: 8.2, db: 9.8, cz: -0.3, n: 2.25 },
+    { y: -33, w: 14.6, df: 8, db: 8.9, cz: -0.1, n: 2.2 },
+    { y: -28, w: 12.4, df: 7.8, db: 7.9, cz: 0.05, n: 2.12 },
+    { y: -23, w: 10.4, df: 7.8, db: 7.6, cz: 0.15, n: 2.1 },
+    { y: -17, w: 10.8, df: 8.2, db: 7.8, cz: 0.3, n: 2.15 },
+    // 가슴통: 옆으로는 좁고(팔이 바로 옆에 곧게 내려옴) 앞뒤로 도톰하게
+    { y: -11, w: 11.5, df: 9.2, db: 9.3, cz: 0.4, n: 2.3 },
+    { y: -4, w: 12.1, df: 9.6, db: 10.2, cz: 0.3, n: 2.3 },
+    { y: 1, w: 11.9, df: 9.1, db: 9.7, cz: 0.1, n: 2.3 },
+    // 어깨: 몸통은 어깨뼈 끝까지, 둥근 어깨 끝은 팔 윗머리(삼각근)가 덮음. 목 가까이는 낮고 완만한 승모근 비탈
+    // (어깨 끝 단면은 팔 윗머리 속에 숨을 만큼만 — 몸통 모서리가 둥근 어깨 앞으로 삐져나오지 않게)
+    { y: 3.6, w: 12, df: 7.9, db: 8.6, cz: 0, n: 2.2 },
+    { y: 5, w: 11.8, df: 7.3, db: 8.1, cz: -0.1, n: 2.05 },
+    { y: 6.2, w: 11.6, df: 6.7, db: 7.5, cz: -0.2, n: 2 },
+    { y: 7.2, w: 11.4, df: 6.1, db: 6.9, cz: -0.25, n: 2 },
+    { y: 7.9, w: 11.1, df: 5.7, db: 6.5, cz: -0.3, n: 2 },
+    { y: 8.4, w: 10.5, df: 5.4, db: 6.2, cz: -0.35, n: 2 },
+    { y: 8.9, w: 9, df: 5.15, db: 5.85, cz: -0.4, n: 2 },
+    { y: 9.4, w: 7.6, df: 4.9, db: 5.45, cz: -0.5, n: 2 },
+    { y: 9.9, w: 6.6, df: 4.7, db: 5.15, cz: -0.6, n: 2 },
+    // 목: 레퍼런스처럼 머리 너비의 0.6쯤 되는 도톰한 원기둥, 턱 끝보다 뒤에서 올라가 뒤통수 밑으로
+    { y: 10.4, w: 5.8, df: 4.5, db: 4.9, cz: -0.7, n: 2 },
+    { y: 11.4, w: 5.2, df: 4.4, db: 4.7, cz: -0.8, n: 2 },
+    { y: 12.6, w: 4.9, df: 4.35, db: 4.6, cz: -0.95, n: 2 },
+    { y: 15, w: 4.8, df: 4.3, db: 4.5, cz: -1.25, n: 2 },
+    { y: 18, w: 4.75, df: 4.2, db: 4.5, cz: -1.65, n: 2 },
+    { y: 21, w: 4.6, df: 4, db: 4.5, cz: -2.05, n: 2 },
+    // 목덜미는 뒤통수 속까지 올라가 이어짐 (뒤통수 밑에 오목한 틈이 없게)
+    { y: 23, w: 4.4, df: 3.6, db: 4.4, cz: -2.5, n: 2 },
+    { y: 24.6, w: 4, df: 3, db: 4.2, cz: -2.8, n: 2 },
+    { y: 26.2, w: 3, df: 2.2, db: 3.2, cz: -3, n: 2 },
+    { y: 26.6, w: 0.5, df: 0.5, db: 0.5, cz: -3 },
   ],
   bumps: [
     // 견갑골
     { y: -1, below: 7, above: 5, phi: -126, spread: 20, amp: 0.9 },
     { y: -1, below: 7, above: 5, phi: -54, spread: 20, amp: 0.9 },
+    // 겨드랑이 오목한 곳 (팔이 몸 옆에 바로 붙어 내려올 자리)
+    { y: -5, below: 8, above: 4, phi: 0, spread: 18, amp: -1.6 },
+    { y: -5, below: 8, above: 4, phi: 180, spread: 18, amp: -1.6 },
+    // 둥근 어깨(삼각근): 승모근 비탈이 끊김 없이 둥근 어깨 공으로 이어지고, 팔은 그 아래에서 나옴
+    { y: 4.8, below: 2.6, above: 2.6, phi: 0, spread: 25, amp: 4.8 },
+    { y: 4.8, below: 2.6, above: 2.6, phi: 180, spread: 25, amp: 4.8 },
     // 척추 골
     { y: -14, below: 22, above: 16, phi: -90, spread: 6, amp: -0.55 },
     // 엉덩이
-    { y: -45, below: 5.5, above: 7, phi: -120, spread: 24, amp: 2.6 },
-    { y: -45, below: 5.5, above: 7, phi: -60, spread: 24, amp: 2.6 },
+    { y: -43.5, below: 4.5, above: 7, phi: -120, spread: 24, amp: 2.5 },
+    { y: -43.5, below: 4.5, above: 7, phi: -60, spread: 24, amp: 2.5 },
     // 아랫배(살짝), 배꼽
-    { y: -36, below: 6, above: 7, phi: 90, spread: 32, amp: 0.5 },
-    { y: -23, below: 0.7, above: 0.7, phi: 90, spread: 4.5, amp: -0.45 },
+    { y: -37, below: 5, above: 6, phi: 90, spread: 32, amp: 0.45 },
+    { y: -27.5, below: 0.7, above: 0.7, phi: 90, spread: 4.5, amp: -0.45 },
     // 쇄골, 목 아래 오목한 곳(흉골 위)
-    { y: 9.6, below: 0.9, above: 0.9, phi: 55, spread: 20, amp: 0.55 },
-    { y: 9.6, below: 0.9, above: 0.9, phi: 125, spread: 20, amp: 0.55 },
-    { y: 12.1, below: 1.2, above: 0.8, phi: 90, spread: 12, amp: -0.3 },
+    { y: 7.7, below: 0.8, above: 0.8, phi: 55, spread: 20, amp: 0.45 },
+    { y: 7.7, below: 0.8, above: 0.8, phi: 125, spread: 20, amp: 0.45 },
+    { y: 9.1, below: 1.1, above: 0.8, phi: 90, spread: 13, amp: -0.35 },
     // 목빗근: 귀 뒤에서 흉골 위로 모이는 V
-    { y: 14.4, below: 1, above: 1, phi: 70, spread: 10, amp: 0.18 },
-    { y: 14.4, below: 1, above: 1, phi: 110, spread: 10, amp: 0.18 },
-    { y: 16, below: 1, above: 1, phi: 60, spread: 10, amp: 0.2 },
-    { y: 16, below: 1, above: 1, phi: 120, spread: 10, amp: 0.2 },
-    { y: 17.6, below: 1, above: 1, phi: 50, spread: 10, amp: 0.18 },
-    { y: 17.6, below: 1, above: 1, phi: 130, spread: 10, amp: 0.18 },
-    { y: 19.2, below: 1, above: 1, phi: 41, spread: 10, amp: 0.16 },
-    { y: 19.2, below: 1, above: 1, phi: 139, spread: 10, amp: 0.16 },
+    { y: 11, below: 1, above: 1, phi: 72, spread: 10, amp: 0.2 },
+    { y: 11, below: 1, above: 1, phi: 108, spread: 10, amp: 0.2 },
+    { y: 12.8, below: 1, above: 1, phi: 61, spread: 10, amp: 0.22 },
+    { y: 12.8, below: 1, above: 1, phi: 119, spread: 10, amp: 0.22 },
+    { y: 14.6, below: 1, above: 1, phi: 51, spread: 10, amp: 0.2 },
+    { y: 14.6, below: 1, above: 1, phi: 129, spread: 10, amp: 0.2 },
+    { y: 16.4, below: 1, above: 1, phi: 42, spread: 10, amp: 0.17 },
+    { y: 16.4, below: 1, above: 1, phi: 138, spread: 10, amp: 0.17 },
   ],
   breasts: [
-    { y: -0.6, phi: 52, w: 6, up: 7.4, down: 4.5, d: 5 },
-    { y: -0.6, phi: 128, w: 6, up: 7.4, down: 4.5, d: 5 },
+    { y: -4.6, phi: 52, wIn: 6.8, wOut: 10.2, up: 6.8, down: 5.5, d: 3.85 },
+    { y: -4.6, phi: 128, wIn: 6.8, wOut: 10.2, up: 6.8, down: 5.5, d: 3.85 },
   ],
   face: [
     // 매장 마네킹(에그헤드): 머리뼈와 갸름한 얼굴을 아주 부드럽게 합친 달걀 + 눈썹에서 코끝까지 이어진 부드러운 콧날
-    { skull: { y: 14.4, z: -1.4, w: 7, h: 8.1, f: 8.2, b: 8.6, n: 2.2 } },
-    { e: [0, 12.2, -4.8], r: [5.6, 4.9, 4.6], k: 3 },
-    { e: [4, 8.2, -2.8], r: [2, 2.4, 2.4], k: 2.5, sym: true },
-    // 얼굴: 광대에서 턱끝으로 갈수록 좁아지는 달걀 (턱이 갸름하게) + 눈썹 사이에서 코끝까지 낮은 콧날
-    { e: [0, 8.4, 2.2], r: [5.1, 8.4, 5.4], k: 4.5, tilt: 0.1, taper: 0.44, keel: 1.55 },
-    { rod: [[0, 14.2, 6], 0.7, [0, 9.4, 6.95], 0.45], k: 1.6 },
+    { skull: { y: 13.5, z: -2.2, w: 6.9, h: 7.4, f: 7.5, b: 8.4, n: 2.2, nv: 2.3 } },
+    { e: [0, 11.5, -5.6], r: [5.8, 5, 4.6], k: 3 },
+    // 얼굴: 넓은 달걀 (턱까지 둥글게 내려오는 넓은 아래 얼굴, 둥근 턱끝) + 눈썹 사이에서 코끝까지 긴 콧날
+    { e: [0, 9.7, 0.9], r: [6.85, 9.7, 6.2], k: 5, tilt: -0.12, taper: 0.12, keel: 1.5 },
+    { rod: [[0, 14.1, 6.1], 0.5, [0, 7.8, 7.95], 1.05], k: 2.2 },
     // 작고 납작한 귀
-    { e: [6.55, 10.3, -1.8], r: [0.62, 2.5, 1.3], k: 0.7, sym: true },
+    { e: [7.2, 9.2, -1.9], r: [0.6, 2.6, 1.3], k: 0.7, sym: true },
   ],
-  chin: 19.5,
+  chin: 18,
   // 가는 패션 마네킹 팔: 둥근 어깨 → 이두 → 팔꿈치 → 아래팔 → 손목 (손목 끝은 손 안에 숨는 둥근 마개)
   arm: [
     [0, 0.8, 0.8],
@@ -203,19 +230,19 @@ const FEMALE: Spec = {
       [0, 5, 4.8, 0],
       [1.8, 7, 6.8, 0],
       [4.2, 7.7, 7.6, 0],
-      [8, 7.7, 7.8, 0.2],
-      [16, 6.8, 7, 0.4],
-      [26, 5.8, 6.1, 0.4],
-      [35, 4.8, 5, 0.3],
-      [41, 4.4, 4.6, 0.1],
-      [44, 4.3, 4.5, 0],
-      [47.5, 4, 4.3, 0.3],
-      [53, 4.1, 4.9, 0.9],
-      [58, 3.9, 4.8, 0.9],
-      [66, 3.1, 3.6, 0.5],
-      [74, 2.35, 2.6, 0.2],
-      [80, 2.25, 2.5, 0.1],
-      [82, 2.1, 2.3, 0],
+      [8, 7.8, 7.9, 0.2],
+      [16, 7.1, 7.3, 0.4],
+      [26, 6.1, 6.4, 0.4],
+      [35, 5.1, 5.3, 0.3],
+      [41, 4.75, 4.9, 0.1],
+      [44, 4.65, 4.8, 0],
+      [47.5, 4.4, 4.7, 0.3],
+      [53, 4.55, 5.4, 0.9],
+      [58, 4.3, 5.2, 0.9],
+      [66, 3.45, 3.95, 0.5],
+      [74, 2.7, 2.95, 0.2],
+      [80, 2.6, 2.85, 0.1],
+      [82, 2.4, 2.6, 0],
       [82.8, 0.4, 0.4, 0],
     ],
     foot: { len: 23.5, w: 4.2, h: 3.2 },
@@ -223,26 +250,53 @@ const FEMALE: Spec = {
   seams: {
     lines: [
       // 가슴 밑 (브래지어 와이어처럼 가운데에서 살짝 올라감)
-      { pts: [[16, -3.6], [28, -4.4], [38, -4.9], [48, -5.1], [60, -4.8], [72, -4.1], [90, -3.3], [108, -4.1], [120, -4.8], [132, -5.1], [142, -4.9], [152, -4.4], [164, -3.6]], sym: false },
+      { pts: [[14, -9.6], [26, -10.4], [38, -10.9], [50, -11.1], [62, -10.7], [74, -9.9], [90, -9], [106, -9.9], [118, -10.7], [130, -11.1], [142, -10.9], [154, -10.4], [166, -9.6]], sym: false },
       // 가슴 밑에서 허리를 지나 다리 이음까지 내려가는 세로선
-      { pts: [[62, -4.7], [63, -12], [64, -20], [63, -27], [60, -32], [56, -37]], sym: true },
-      // 다리 이음 (엉덩이 옆에서 사타구니로)
-      { pts: [[6, -35.2], [22, -39.5], [42, -45.5], [62, -51], [78, -54], [90, -55]], sym: true },
+      { pts: [[60, -10.8], [61, -16], [62, -22], [61, -29], [58, -36], [54, -42.5]], sym: true },
+      // 다리 이음: 엉덩이 옆 골반뼈 높이에서 거의 수평으로 오다가 사타구니로 휘어 내려감
+      { pts: [[4, -34], [20, -36.5], [38, -39.5], [54, -42.5], [68, -46], [80, -49.4], [90, -50.6]], sym: true },
     ],
     arm: [3.2, 23, 44.3],
   },
-  neck: 4.6,
-  neckY: 13.6,
-  neckFit: { w: 5.9, d: 5.2 },
+  // 빈 마네킹: 위팔은 몸 옆에 곧게, 팔꿈치에서 아래팔이 살짝 바깥·앞으로 (손끝이 허벅지 중간쯤)
+  free: {
+    arm: [
+      [0, 0.9, 0.9],
+      [0.8, 2.7, 2.6],
+      [2, 3.6, 3.45],
+      [3.5, 3.95, 3.8],
+      [5.5, 3.9, 3.85],
+      [10, 3.6, 3.7],
+      [17, 3.4, 3.35],
+      [24, 3.15, 3.1],
+      [30.5, 2.75, 2.9],
+      [34.5, 2.95, 3.2],
+      [40.5, 2.8, 2.9],
+      [47.5, 2.3, 2.55],
+      [53, 1.9, 2.35],
+      [54.2, 1.65, 2.05],
+      [54.9, 1, 1.2],
+      [55.2, 0.3, 0.3],
+    ],
+    wrist: 53,
+    seams: [28, 52.8],
+    top: [13.6, 6.4, -0.3],
+    upper: [0.03, -1, -0.02],
+    elbow: 30.5,
+    fore: [0.16, -0.975, 0.15],
+  },
+  neck: 4.8,
+  neckY: 10.4,
+  neckFit: { w: 6.6, d: 5.4 },
   wrist: 44.5,
   hand: { s: 1, w: 1 },
 };
 
 const MALE: Spec = {
   torso: [
-    { y: -59.6, w: 2.2, df: 1.6, db: 2 },
-    { y: -57.9, w: 11.6, df: 5.6, db: 7.6, cz: -0.2 },
-    { y: -54.4, w: 16.2, df: 8, db: 9.6, cz: -0.3, n: 2.35 },
+    { y: -56, w: 2.2, df: 1.6, db: 2 },
+    { y: -54.4, w: 11.4, df: 5.6, db: 7.2, cz: -0.2 },
+    { y: -51.2, w: 16, df: 8, db: 9.3, cz: -0.3, n: 2.35 },
     // 넓은 어깨에서 좁은 허리·골반으로 (역삼각형: 가슴 98 · 허리 78 · 엉덩이 90)
     { y: -46, w: 16.8, df: 9.2, db: 10, cz: -0.2, n: 2.3 },
     { y: -37, w: 15, df: 9, db: 9.2, cz: 0.1, n: 2.25 },
@@ -250,22 +304,27 @@ const MALE: Spec = {
     { y: -18, w: 15, df: 9.8, db: 9, cz: 0.4, n: 2.3 },
     { y: -8, w: 17, df: 10.4, db: 9.7, cz: 0.3, n: 2.5 },
     { y: 0, w: 16.8, df: 10, db: 9.9, cz: 0.1, n: 2.45 },
-    // 몸통은 어깨뼈 끝까지만, 둥근 어깨 끝은 팔 윗머리(삼각근)가 이룸 (넓은 등근육으로 역삼각형)
-    { y: 3.6, w: 16.8, df: 9.4, db: 9.5, cz: -0.05, n: 2.45 },
-    { y: 6.2, w: 16.4, df: 8.4, db: 8.7, cz: -0.2, n: 2.4 },
-    { y: 8.2, w: 15.4, df: 7.4, db: 7.9, cz: -0.3, n: 2.35 },
-    { y: 9.8, w: 13.6, df: 6.4, db: 7.2, cz: -0.45, n: 2.3 },
-    { y: 11.1, w: 11.2, df: 5.8, db: 6.7, cz: -0.55, n: 2.25 },
-    { y: 12.6, w: 9.6, df: 5.4, db: 6.2, cz: -0.6, n: 2.2 },
-    // 목: 턱 끝보다 뒤에서 올라가 턱 밑이 드러나고 뒤통수 밑으로 들어감
-    { y: 14, w: 7.5, df: 5.25, db: 5.85, cz: -0.8, n: 2 },
-    { y: 15.6, w: 6, df: 5.2, db: 5.6, cz: -1.2, n: 2 },
-    { y: 18.4, w: 5.75, df: 5.05, db: 5.4, cz: -1.6, n: 2 },
-    { y: 21.4, w: 5.6, df: 4.8, db: 5.3, cz: -1.95, n: 2 },
-    { y: 24.4, w: 5.5, df: 4.5, db: 5.3, cz: -2.25, n: 2 },
-    { y: 27, w: 4.8, df: 4, db: 5, cz: -2.5, n: 2 },
-    { y: 28.2, w: 2.8, df: 2.3, db: 3, cz: -2.7, n: 2 },
-    { y: 28.6, w: 0.5, df: 0.5, db: 0.5, cz: -2.7 },
+    // 몸통은 어깨뼈 끝까지만, 둥근 어깨 끝은 팔 윗머리(삼각근)가 이룸 (넓은 등근육으로 역삼각형).
+    // 목 가까이는 낮고 완만한 승모근 비탈
+    { y: 3.6, w: 16.6, df: 9.4, db: 9.5, cz: -0.05, n: 2.45 },
+    { y: 6.2, w: 16.2, df: 8.4, db: 8.7, cz: -0.2, n: 2.4 },
+    { y: 7.4, w: 15.7, df: 7.6, db: 8.2, cz: -0.25, n: 2.35 },
+    { y: 8.4, w: 14.6, df: 6.9, db: 7.6, cz: -0.35, n: 2.3 },
+    { y: 9.3, w: 12.8, df: 6.3, db: 7.1, cz: -0.45, n: 2.25 },
+    { y: 10.1, w: 10.6, df: 5.9, db: 6.6, cz: -0.55, n: 2.2 },
+    { y: 10.9, w: 8.6, df: 5.6, db: 6.2, cz: -0.65, n: 2.1 },
+    // 목: 굵은 원기둥, 턱 끝보다 뒤에서 올라가 턱 밑이 드러나고 뒤통수 밑으로 들어감
+    { y: 11.8, w: 7, df: 5.4, db: 5.9, cz: -0.75, n: 2 },
+    { y: 12.8, w: 6.1, df: 5.3, db: 5.7, cz: -0.9, n: 2 },
+    { y: 14.2, w: 5.8, df: 5.2, db: 5.6, cz: -1.1, n: 2 },
+    { y: 17, w: 5.7, df: 5.05, db: 5.45, cz: -1.5, n: 2 },
+    { y: 20, w: 5.6, df: 4.85, db: 5.35, cz: -1.9, n: 2 },
+    { y: 22.5, w: 5.4, df: 4.5, db: 5.3, cz: -2.25, n: 2 },
+    // 목덜미는 뒤통수 속까지 올라가 이어짐
+    { y: 24.5, w: 4.9, df: 4, db: 5.2, cz: -2.6, n: 2 },
+    { y: 26.5, w: 4.4, df: 3.4, db: 4.8, cz: -3, n: 2 },
+    { y: 28, w: 3.4, df: 2.4, db: 3.6, cz: -3.2, n: 2 },
+    { y: 28.4, w: 0.5, df: 0.5, db: 0.5, cz: -3.2 },
   ],
   bumps: [
     // 대흉근
@@ -274,39 +333,41 @@ const MALE: Spec = {
     // 견갑골
     { y: -1, below: 7, above: 5, phi: -126, spread: 21, amp: 1.1 },
     { y: -1, below: 7, above: 5, phi: -54, spread: 21, amp: 1.1 },
+    // 둥근 어깨(삼각근): 승모근 비탈이 끊김 없이 둥근 어깨 공으로 이어지고, 팔은 그 아래에서 나옴
+    { y: 5, below: 2.6, above: 3.4, phi: 0, spread: 25, amp: 3.8 },
+    { y: 5, below: 2.6, above: 3.4, phi: 180, spread: 25, amp: 3.8 },
     // 척추 골
     { y: -14, below: 22, above: 16, phi: -90, spread: 6, amp: -0.65 },
     // 엉덩이
-    { y: -47, below: 5.5, above: 7, phi: -120, spread: 24, amp: 2 },
-    { y: -47, below: 5.5, above: 7, phi: -60, spread: 24, amp: 2 },
+    { y: -45.5, below: 4.5, above: 7, phi: -120, spread: 24, amp: 1.9 },
+    { y: -45.5, below: 4.5, above: 7, phi: -60, spread: 24, amp: 1.9 },
     // 배꼽
-    { y: -26, below: 0.7, above: 0.7, phi: 90, spread: 4.5, amp: -0.45 },
+    { y: -28, below: 0.7, above: 0.7, phi: 90, spread: 4.5, amp: -0.45 },
     // 쇄골, 흉골 위 오목한 곳
-    { y: 10.4, below: 1, above: 1, phi: 52, spread: 20, amp: 0.6 },
-    { y: 10.4, below: 1, above: 1, phi: 128, spread: 20, amp: 0.6 },
-    { y: 13.1, below: 1.2, above: 0.8, phi: 90, spread: 12, amp: -0.3 },
+    { y: 8.6, below: 1, above: 1, phi: 52, spread: 20, amp: 0.6 },
+    { y: 8.6, below: 1, above: 1, phi: 128, spread: 20, amp: 0.6 },
+    { y: 10.3, below: 1.2, above: 0.8, phi: 90, spread: 12, amp: -0.35 },
     // 울대뼈
-    { y: 18.4, below: 1.3, above: 1.1, phi: 90, spread: 13, amp: 0.5 },
+    { y: 15.6, below: 1.3, above: 1.1, phi: 90, spread: 13, amp: 0.5 },
     // 목빗근
-    { y: 15.2, below: 1.1, above: 1.1, phi: 70, spread: 10, amp: 0.26 },
-    { y: 15.2, below: 1.1, above: 1.1, phi: 110, spread: 10, amp: 0.26 },
-    { y: 17, below: 1.1, above: 1.1, phi: 60, spread: 10, amp: 0.28 },
-    { y: 17, below: 1.1, above: 1.1, phi: 120, spread: 10, amp: 0.28 },
-    { y: 18.8, below: 1.1, above: 1.1, phi: 50, spread: 10, amp: 0.26 },
-    { y: 18.8, below: 1.1, above: 1.1, phi: 130, spread: 10, amp: 0.26 },
-    { y: 20.6, below: 1.1, above: 1.1, phi: 41, spread: 10, amp: 0.22 },
-    { y: 20.6, below: 1.1, above: 1.1, phi: 139, spread: 10, amp: 0.22 },
+    { y: 12.2, below: 1.1, above: 1.1, phi: 72, spread: 10, amp: 0.26 },
+    { y: 12.2, below: 1.1, above: 1.1, phi: 108, spread: 10, amp: 0.26 },
+    { y: 14.2, below: 1.1, above: 1.1, phi: 61, spread: 10, amp: 0.28 },
+    { y: 14.2, below: 1.1, above: 1.1, phi: 119, spread: 10, amp: 0.28 },
+    { y: 16.2, below: 1.1, above: 1.1, phi: 51, spread: 10, amp: 0.26 },
+    { y: 16.2, below: 1.1, above: 1.1, phi: 129, spread: 10, amp: 0.26 },
+    { y: 18.2, below: 1.1, above: 1.1, phi: 42, spread: 10, amp: 0.22 },
+    { y: 18.2, below: 1.1, above: 1.1, phi: 138, spread: 10, amp: 0.22 },
   ],
   face: [
     // 여자와 같은 에그헤드, 조금 크고 턱이 넓음
-    { skull: { y: 15, z: -1.5, w: 7.3, h: 8.5, f: 8.6, b: 9, n: 2.25 } },
-    { e: [0, 12.6, -5], r: [5.9, 5.1, 4.8], k: 3 },
-    { e: [4.3, 8.5, -2.9], r: [2.2, 2.6, 2.6], k: 2.5, sym: true },
-    { e: [0, 8.8, 2.3], r: [5.5, 8.8, 5.6], k: 4.5, tilt: 0.1, taper: 0.34, keel: 1.6 },
-    { rod: [[0, 14.8, 6.2], 0.75, [0, 9.6, 7.2], 0.5], k: 1.6 },
-    { e: [6.75, 10.5, -1.9], r: [0.55, 2.4, 1.3], k: 0.8, sym: true },
+    { skull: { y: 14, z: -2.3, w: 7.2, h: 7.7, f: 7.8, b: 8.7, n: 2.25, nv: 2.3 } },
+    { e: [0, 12, -5.8], r: [6, 5.2, 4.8], k: 3 },
+    { e: [0, 10.1, 1], r: [7.15, 10.1, 6.4], k: 5, tilt: -0.12, taper: 0.07, keel: 1.5 },
+    { rod: [[0, 14.7, 6.3], 0.55, [0, 8.1, 8.25], 1.1], k: 2.3 },
+    { e: [7.5, 9.6, -2], r: [0.62, 2.8, 1.4], k: 0.7, sym: true },
   ],
-  chin: 20.5,
+  chin: 19.5,
   arm: [
     [0, 0.9, 0.9],
     [0.9, 3, 3.1],
@@ -335,29 +396,55 @@ const MALE: Spec = {
       [1.8, 7.5, 7.7, 0],
       [4.2, 8.5, 8.8, 0],
       [8, 8.7, 9, 0.2],
-      [17, 8.1, 8.4, 0.4],
-      [27, 6.9, 7.2, 0.4],
-      [37, 5.8, 6, 0.3],
-      [42.5, 5.3, 5.5, 0.1],
-      [45.6, 5.2, 5.4, 0],
-      [49.5, 4.9, 5.2, 0.3],
-      [55.5, 5, 6, 1],
-      [61, 4.8, 5.8, 1],
-      [69.5, 3.8, 4.3, 0.5],
-      [78, 2.9, 3.2, 0.2],
-      [84, 2.8, 3.1, 0.1],
-      [86.2, 2.6, 2.8, 0],
+      [17, 8.2, 8.5, 0.4],
+      [27, 7.1, 7.4, 0.4],
+      [37, 6, 6.2, 0.3],
+      [42.5, 5.5, 5.7, 0.1],
+      [45.6, 5.4, 5.6, 0],
+      [49.5, 5.1, 5.45, 0.3],
+      [55.5, 5.3, 6.3, 1],
+      [61, 5.1, 6.1, 1],
+      [69.5, 4.05, 4.6, 0.5],
+      [78, 3.15, 3.45, 0.2],
+      [84, 3.05, 3.35, 0.1],
+      [86.2, 2.8, 3, 0],
       [87, 0.4, 0.4, 0],
     ],
     foot: { len: 26.5, w: 4.8, h: 3.6 },
   },
   seams: {
-    lines: [{ pts: [[6, -37], [22, -41.5], [42, -47.5], [62, -53], [78, -56.4], [90, -57.4]], sym: true }],
+    lines: [{ pts: [[4, -36.5], [20, -39], [38, -42.5], [54, -46], [68, -49.5], [80, -52.4], [90, -53.4]], sym: true }],
     arm: [3.4, 24.5, 48.2],
   },
-  neck: 5.4,
-  neckY: 14.6,
-  neckFit: { w: 6.6, d: 6.05 },
+  free: {
+    arm: [
+      [0, 0.9, 0.9],
+      [0.9, 3, 3.1],
+      [2.2, 4.1, 4.2],
+      [3.8, 4.6, 4.7],
+      [6, 4.65, 4.7],
+      [11, 4.45, 4.4],
+      [18.5, 4.15, 4],
+      [26, 3.75, 3.6],
+      [33.5, 3.3, 3.45],
+      [37.8, 3.55, 3.85],
+      [44.5, 3.4, 3.5],
+      [52, 2.75, 3],
+      [58.3, 2.2, 2.75],
+      [59.6, 1.9, 2.4],
+      [60.4, 1.15, 1.35],
+      [60.7, 0.3, 0.3],
+    ],
+    wrist: 58.3,
+    seams: [31, 58.1],
+    top: [16.1, 6.6, -0.4],
+    upper: [0.25, -0.97, -0.03],
+    elbow: 33.5,
+    fore: [0.2, -0.97, 0.13],
+  },
+  neck: 5.6,
+  neckY: 11.6,
+  neckFit: { w: 7.4, d: 6.3 },
   wrist: 48.4,
   hand: { s: 1.07, w: 1.12 },
 };
@@ -541,7 +628,7 @@ export function loftReach(L: Loft, theta: number, y: number): number {
 type Prim = { lo: number; hi: number; k: number; sub: boolean; base?: boolean; d: (x: number, y: number, z: number) => number };
 
 function ellipsoid(c: P3, r: P3, k: number, sub = false, tilt = 0, taper = 0, keel = 2): Prim {
-  // tilt: 아래쪽이 앞으로 나오게 기울임 (라디안, x축 둘레)
+  // tilt: 음수면 아래(턱)가 앞으로, 위(이마)가 뒤로 기울어짐 (라디안, x축 둘레)
   const ct = Math.cos(tilt);
   const st = Math.sin(tilt);
   // 부드럽게 붙는 범위까지 넉넉히 (범위를 너무 좁게 자르면 그 높이에서 겉면이 끊겨 줄무늬가 생김)
@@ -610,8 +697,10 @@ function skullPrim(s: Extract<Part, { skull: unknown }>['skull'], k: number): Pr
       const X = Math.abs(x) / s.w;
       const Z = Math.abs(dz) / (dz >= 0 ? s.f : s.b);
       const Y = (y - s.y) / s.h;
-      const hor = Math.pow(Math.pow(X, s.n) + Math.pow(Z, s.n), 2 / s.n);
-      return (Math.sqrt(hor + Y * Y) - 1) * m;
+      const hor = Math.pow(Math.pow(X, s.n) + Math.pow(Z, s.n), 1 / s.n);
+      // nv > 2: 정수리가 덜 뾰족하고 둥글넓적하게 (위에서 보면 둥근 달걀, 앞에서 보면 넓은 이마)
+      const nv = s.nv ?? 2;
+      return (Math.pow(Math.pow(hor, nv) + Math.pow(Math.abs(Y), nv), 1 / nv) - 1) * m;
     },
   };
 }
@@ -770,7 +859,8 @@ export function unitHead(kind: BodyKind): Loft {
   if (hit) return hit;
   const f = BODY_SPECS[kind].face;
   const sk = skullOf(f);
-  const L = sampleHead(headPrims(f), -0.8, sk.y + sk.h + 0.6, 0.35, 144);
+  // 위로 넉넉히 (덩어리를 부드럽게 붙이면 정수리가 머리뼈보다 조금 올라감 — 잘리면 정수리가 평평해짐)
+  const L = sampleHead(headPrims(f), -0.8, sk.y + sk.h + 3, 0.35, 144);
   unitHeads.set(kind, L);
   return L;
 }
@@ -916,18 +1006,49 @@ function find(L: Layout, r: SimRole): ArtPiece | undefined {
   return [...L.roles].find(([, x]) => x === r)?.[0];
 }
 
-/** 팔 고리 (소매 축의 t 좌표): 어깨 꼭대기 tTop에서 아래로 */
-function armRings(spec: Spec, tTop: number, sw: number, sh: number): Ring[] {
-  const keys = spec.arm.map(([s, rx, rz]) => ({ t: tTop - s * sh, rx: rx * sw, rz: rz * sw })).sort((a, b) => a.t - b.t);
+/**
+ * 팔 굵기·손목·이음선 자리 (옷을 입힐 때는 소매에 맞춘 길이, 빈 마네킹은 사람 비율 길이).
+ * junction: 어깨 이음선을 고리 대신 팔과 몸통이 만나는 선으로 (레퍼런스처럼 어깨 앞을 세로로 지나 겨드랑이로)
+ */
+type ArmProfile = { keys: [number, number, number][]; wrist: number; seams: number[]; junction?: boolean };
+
+/** 팔 고리 (축의 t 좌표): 어깨 꼭대기 tTop에서 아래로 */
+function armRings(P: ArmProfile, tTop: number, sw: number, sh: number): Ring[] {
+  const keys = P.keys.map(([s, rx, rz]) => ({ t: tTop - s * sh, rx: rx * sw, rz: rz * sw })).sort((a, b) => a.t - b.t);
   return smoothKeys(keys, 4);
+}
+
+/** 빈 마네킹 팔의 축: 어깨 꼭대기에서 위팔 방향으로 팔꿈치까지, 팔꿈치에서 부드럽게 꺾여 아래팔 방향으로 */
+function freeArmAxis(spec: Spec, sx: number, armpitY: number, sw: number, sh: number): { axis: Axis; tTop: number } {
+  const F = spec.free;
+  const dir = (d: [number, number, number]): Vec3 => norm3([sx * d[0] * sw, d[1] * sh, d[2] * sw]);
+  const up = dir(F.upper);
+  const fore = dir(F.fore);
+  const top: Vec3 = [sx * F.top[0] * sw, armpitY + F.top[1] * sh, F.top[2] * sw];
+  const total = (F.arm[F.arm.length - 1]![0] + 1) * sh;
+  const elbow = F.elbow * sh;
+  const bend = 5 * sh;
+  const pts: Vec3[] = [top];
+  const N = Math.ceil(total / 0.8);
+  for (let i = 1; i <= N; i++) {
+    const s = (i - 0.5) * (total / N);
+    // 팔꿈치 앞뒤 bend만큼에서 위팔 → 아래팔 방향으로 부드럽게
+    const f = Math.max(0, Math.min(1, (s - (elbow - bend)) / (2 * bend)));
+    const g = f * f * (3 - 2 * f);
+    const d = norm3([up[0] + (fore[0] - up[0]) * g, up[1] + (fore[1] - up[1]) * g, up[2] + (fore[2] - up[2]) * g]);
+    pts.push(along(pts[i - 1]!, d, total / N));
+  }
+  pts.reverse();
+  // t는 아래 끝(손 쪽)에서 잰 길이 → 어깨 꼭대기 = total
+  return { axis: pathAxis(pts, [0, 0, 1]), tTop: total };
 }
 
 /**
  * 손목에 붙인 손: 손바닥이 허벅지 쪽을 보고 손가락은 그쪽으로 살짝 굽어요. 엄지는 앞 가장자리에서 앞·아래로.
  * 축 방향은 팔과 같게 (손끝 → 손목)
  */
-function handFor(spec: Spec, arm: Limb, tTop: number, sw: number, sh: number): { hand: Limb[]; fingers: Limb[] } {
-  const f = arm.axis.at(tTop - spec.wrist * sh);
+function handFor(spec: Spec, P: ArmProfile, arm: Limb, tTop: number, sw: number, sh: number): { hand: Limb[]; fingers: Limb[] } {
+  const f = arm.axis.at(tTop - P.wrist * sh);
   const down: Vec3 = [-f.y[0], -f.y[1], -f.y[2]];
   const side = Math.sign(f.p[0]) || 1;
   const inw = norm3(along([-side, 0, 0], down, side * down[0]));
@@ -1078,7 +1199,78 @@ function torsoPoint(L: Loft, phiDeg: number, y: number, lift: number): Vec3 {
 }
 
 /** 이음선: 몸통 선들(부드럽게 이어 촘촘히)과 팔 이음 고리 */
-function seamsFor(spec: Spec, torso: Loft, arms: Limb[], armTops: number[], armpitY: number, sh: number): Vec3[][] {
+/** 팔 축의 t → 고리 번호 (t는 고리마다 오름차순) */
+function ringIndex(arm: Limb, t: number): number {
+  let k = 0;
+  while (k < arm.rings.length - 2 && arm.rings[k + 1]!.t < t) k++;
+  const a = arm.rings[k]!;
+  const b = arm.rings[k + 1]!;
+  return k + Math.max(0, Math.min(1, (t - a.t) / (b.t - a.t || 1)));
+}
+
+/**
+ * 팔과 몸통이 만나는 선: 팔 겉면을 둘레마다 위에서 아래로 훑어 몸통 안 ↔ 밖이 바뀌는 곳.
+ * 몸통 안으로 들어간 쪽(어깨 안쪽·겨드랑이)만 고리를 이룸 → 위 경계를 따라가다 아래 경계로 돌아옴
+ */
+function junctionSeam(torso: Loft, arm: Limb, tTop: number, sh: number, lift: number): Vec3[] {
+  const sheet = limbSheet(arm, 64);
+  const inside = (p: Vec3) => Math.hypot(p[0], p[2]) < loftReach(torso, Math.atan2(p[2], p[0]), p[1]);
+  const pt = (u: number, sv: number) => sheet.at(u, ringIndex(arm, tTop - sv * sh));
+  const N = 96;
+  const step = 0.25;
+  const span = 32;
+  const cross = (u: number, a: number, b: number) => {
+    // a(안/밖)와 b 사이를 반으로 나눠 좁힘
+    const ia = inside(pt(u, a));
+    for (let k = 0; k < 14; k++) {
+      const m = (a + b) / 2;
+      if (inside(pt(u, m)) === ia) a = m;
+      else b = m;
+    }
+    return (a + b) / 2;
+  };
+  const top: (number | null)[] = [];
+  const bot: (number | null)[] = [];
+  for (let j = 0; j < N; j++) {
+    const u = j / N;
+    let prev = inside(pt(u, 0));
+    let first: number | null = prev ? 0 : null;
+    let last: number | null = null;
+    for (let sv = step; sv <= span; sv += step) {
+      const now = inside(pt(u, sv));
+      if (now && !prev && first === null) first = cross(u, sv - step, sv);
+      if (!now && prev) last = cross(u, sv - step, sv);
+      prev = now;
+    }
+    top.push(first !== null && last !== null ? first : null);
+    bot.push(first !== null && last !== null ? last : null);
+  }
+  const lifted = (u: number, sv: number) => {
+    const k = ringIndex(arm, tTop - sv * sh);
+    const p = sheet.at(u, k);
+    const o = norm3(sub3(p, sheet.inside(u, k)));
+    return along(p, o, lift);
+  };
+  const on = top.map((v) => v !== null);
+  if (!on.some(Boolean)) return [];
+  if (on.every(Boolean)) {
+    // 팔 윗머리가 통째로 어깨 속에 묻힘 → 팔이 어깨 밑에서 나오는 둘레 한 바퀴
+    const ring = bot.map((sv, j) => lifted(j / N, sv!));
+    ring.push(ring[0]!);
+    return ring;
+  }
+  // 몸통 안으로 들어간 둘레 구간 (이어진 한 덩어리)을 찾아 그 시작부터
+  const j0 = on.findIndex((v, j) => v && !on[(j + N - 1) % N]);
+  const run: number[] = [];
+  for (let j = j0; on[j % N] && run.length < N; j++) run.push(j % N);
+  const loop: Vec3[] = [];
+  for (const j of run) loop.push(lifted(j / N, top[j]!));
+  for (const j of [...run].reverse()) loop.push(lifted(j / N, bot[j]!));
+  loop.push(loop[0]!);
+  return loop;
+}
+
+function seamsFor(spec: Spec, torso: Loft, arms: Limb[], armTops: number[], armSeams: ArmProfile[], armpitY: number, sh: number): Vec3[][] {
   const out: Vec3[][] = [];
   const lift = 0.02;
   for (const line of spec.seams.lines) {
@@ -1102,14 +1294,13 @@ function seamsFor(spec: Spec, torso: Loft, arms: Limb[], armTops: number[], armp
   }
   arms.forEach((arm, ai) => {
     const sheet = limbSheet(arm, 48);
-    for (const sv of spec.seams.arm) {
-      const t = armTops[ai]! - sv * sh;
-      // 고리 번호 k (t는 고리마다 오름차순)
-      let k = 0;
-      while (k < arm.rings.length - 2 && arm.rings[k + 1]!.t < t) k++;
-      const a = arm.rings[k]!;
-      const b = arm.rings[k + 1]!;
-      const kk = k + Math.max(0, Math.min(1, (t - a.t) / (b.t - a.t || 1)));
+    const P = armSeams[ai]!;
+    if (P.junction) {
+      const j = junctionSeam(torso, arm, armTops[ai]!, sh, lift);
+      if (j.length) out.push(j);
+    }
+    for (const sv of P.seams) {
+      const kk = ringIndex(arm, armTops[ai]! - sv * sh);
       const ring: Vec3[] = [];
       for (let j = 0; j < 48; j++) {
         const p = sheet.at(j / 48, kk);
@@ -1152,33 +1343,32 @@ export function bodyFor(kind: BodyKind, L: Layout, tubes: Map<ArtPiece, Tube>, a
   const hands: Limb[] = [];
   const details: Limb[] = [];
   const armTops: number[] = [];
-  const addArm = (axis: Axis, tTop: number) => {
-    const arm = { axis, rings: armRings(spec, tTop, sw, sh) };
+  const armSeams: ArmProfile[] = [];
+  const addArm = (axis: Axis, tTop: number, P: ArmProfile) => {
+    const arm = { axis, rings: armRings(P, tTop, sw, sh) };
     arms.push(arm);
     armTops.push(tTop);
-    const h = handFor(spec, arm, tTop, sw, sh);
+    armSeams.push(P);
+    const h = handFor(spec, P, arm, tTop, sw, sh);
     hands.push(...h.hand);
     details.push(...h.fingers);
   };
+  const sleeveArm: ArmProfile = { keys: spec.arm, wrist: spec.wrist, seams: spec.seams.arm };
   // 팔 윗끝(둥근 어깨)은 소매 윗단보다 조금 위, 몸통 어깨 안에 묻힘
   for (const side of ['sleeveL', 'sleeveR'] as const) {
     const s = find(L, side);
     const t = s ? tubes.get(s) : undefined;
     const axis = s ? axes.get(s) : undefined;
-    if (t && axis) addArm(axis, t.length + 0.6 * sh);
+    if (t && axis) addArm(axis, t.length + 0.6 * sh, sleeveArm);
   }
   if (arms.length < 2) {
-    // 소매가 없는 옷(조끼)이나 빈 마네킹: 둥근 어깨 끝에서 몸 가까이 내린 팔
-    const shoulderW = Math.max(...spec.torso.filter((x) => x.y > 3 && x.y < 9).map((x) => x.w)) * sw;
-    const len = 40 * sh;
+    // 소매가 없는 옷(조끼)이나 빈 마네킹: 팔 윗머리(삼각근)가 어깨뼈 끝을 덮어 둥근 어깨를 이루고,
+    // 위팔은 몸 옆에 내리고 아래팔은 팔꿈치에서 살짝 바깥·앞으로 (사람 비율 길이)
+    const free: ArmProfile = { keys: spec.free.arm, wrist: spec.free.wrist, seams: spec.free.seams, junction: true };
     for (const sx of [-1, 1]) {
       if (arms.length >= 2) break;
-      const tilt = sx * ARM_ANGLE * 0.5;
-      // 팔 윗머리(삼각근)가 어깨뼈 끝을 덮어 둥근 어깨 끝을 이루고, 바깥 선이 팔로 그대로 이어짐
-      const anchor: Vec3 = [sx * (shoulderW - 0.9 * sw), armpitY + 6.5 * sh, 0];
-      const dir = [-Math.sin(tilt), Math.cos(tilt)];
-      const pl: Placement = { origin: [anchor[0] - dir[0]! * len, anchor[1] - dir[1]! * len, 0], tilt };
-      addArm(armAxis(pl, len), len + 1.8 * sh);
+      const { axis, tTop } = freeArmAxis(spec, sx, armpitY, sw, sh);
+      addArm(axis, tTop, free);
     }
   }
 
@@ -1192,7 +1382,7 @@ export function bodyFor(kind: BodyKind, L: Layout, tubes: Map<ArtPiece, Tube>, a
     hands,
     limbs: legs,
     details,
-    seams: seamsFor(spec, torso, arms, armTops, armpitY, sh),
+    seams: seamsFor(spec, torso, arms, armTops, armSeams, armpitY, sh),
     // 발밑에 얇은 둥근 판
     pole: null,
     base: { c: [0, floor - 0.6, 3 * sw], r: 26 * sw, h: 1.2 },
