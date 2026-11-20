@@ -18,7 +18,7 @@
 git clone https://github.com/boldmottt/knitcloset.git   # 레포 이름을 바꾸기 전이면 ohmyknit
 cd knitcloset
 pnpm install
-pnpm test                 # 160개 테스트가 통과해야 해요
+pnpm test                 # 162개 테스트가 통과해야 해요
 pnpm dev                  # 웹 빌드 → DB 마이그레이션 → 서버 (http://127.0.0.1:8787)
 ```
 

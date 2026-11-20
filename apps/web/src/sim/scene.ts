@@ -86,7 +86,7 @@ function bodyGroup(b: BodyModel, occ: Occupancy | undefined, key: string): THREE
   grp.name = 'form';
   const mat = formMaterial();
   if (b.torso) grp.add(formMesh(loftSheet(b.torso, 128), mat, occ, 'torso'));
-  grp.add(formMesh(loftSheet(b.head, 96), mat, occ, 'head'));
+  grp.add(formMesh(loftSheet(b.head, 144), mat, occ, 'head'));
   for (const arm of b.arms) grp.add(formMesh(limbSheet(arm, 56), mat, occ, 'arm'));
   for (const hand of b.hands) grp.add(formMesh(limbSheet(hand, 48), mat, occ, 'hand'));
   for (const limb of b.limbs) grp.add(formMesh(limbSheet(limb, 48), mat, occ, 'limb'));

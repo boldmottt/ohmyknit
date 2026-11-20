@@ -63,6 +63,26 @@ describe('사람 모양 마네킹', () => {
     expect(girthAt(m, ARMPIT + 17)).toBeLessThan(40);
   });
 
+  it.each(BODY_KINDS)('머리와 목 (%s): 목은 턱 끝보다 뒤에서 올라가 턱 밑이 드러나고, 뒤통수가 목덜미 위로 나옴', (kind) => {
+    const b = emptyBody(kind);
+    const H = b.head;
+    const T = b.torso!;
+    const chin = H.y[0]!;
+    const front = (L: Loft, y: number) => loftReach(L, Math.PI / 2, y);
+    const back = (L: Loft, y: number) => -loftReach(L, -Math.PI / 2, y);
+    // 턱 끝 바로 위: 목 앞면(목젖 쪽)이 턱 앞면보다 3.5cm 넘게 뒤 (예전엔 목이 턱 앞까지 나와 턱과 붙어 보였음)
+    expect(front(H, chin + 1.5) - front(T, chin + 1.5)).toBeGreaterThan(3.5);
+    // 뒤통수(턱 끝 위 10cm)가 목덜미(턱 끝 위 4cm)보다 1.5cm 넘게 뒤로
+    expect(back(H, chin + 10)).toBeLessThan(back(T, chin + 4) - 1.5);
+    // 머리 높이(턱 끝 ~ 정수리)는 사람 비율 (여자 22.5, 남자 23.5 근처)
+    const height = b.top - chin;
+    expect(height).toBeGreaterThan(21);
+    expect(height).toBeLessThan(25);
+    // 머리 둘레도 사람 크기
+    expect(specHeadGirth(kind)).toBeGreaterThan(52);
+    expect(specHeadGirth(kind)).toBeLessThan(59);
+  });
+
   it.each(BODY_KINDS)('옷에 맞춘 몸 (%s): 가슴둘레가 옷보다 조금 작음 (보통 여유)', (kind) => {
     const { D, body } = sweater(kind);
     const main = [...D.layout.roles].find(([, r]) => r === 'body')![0];

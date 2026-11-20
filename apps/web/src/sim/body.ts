@@ -7,8 +7,10 @@ import type { ArtPiece } from '../closet/assembledArt';
  * 사람 모양 마네킹 (three.js 없이 숫자만 — 화면에 그릴 때도, 천 시뮬레이션의 부딪힘에도 같은 모양).
  *
  * 통짜 원통 대신 높이마다 단면을 쌓아요(로프트). 단면은 앞·뒤 깊이가 다른 둥근 사각형(초타원)이고,
- * 가슴·대흉근·견갑골·척추 골·엉덩이·쇄골 같은 굴곡을 더해요. 머리는 턱·입술·코·눈두덩·광대까지,
- * 팔은 삼각근 → 이두 → 팔꿈치 → 아래팔 → 손목 → 손, 다리는 허벅지 중간까지. 받침대 위에 섭니다.
+ * 가슴·대흉근·견갑골·척추 골·엉덩이·쇄골 같은 굴곡을 더해요. 목은 턱 끝보다 4~5cm 뒤에서 올라가
+ * 턱 밑이 드러나고 뒤통수가 목덜미 위로 나와요. 머리는 덩어리(머리뼈·뒤통수·얼굴·광대활·깨물근·아래턱·
+ * 턱끝·코)를 부드럽게 합친 매장 마네킹(에그헤드) 얼굴. 팔은 삼각근 → 이두 → 팔꿈치 → 아래팔 → 손목 → 손,
+ * 다리는 허벅지 중간까지. 받침대 위에 섭니다.
  *
  * 치수는 실제 사람 비율(여자: 가슴 88 · 허리 68 · 엉덩이 94, 남자: 가슴 98 · 허리 82 · 엉덩이 96 근처)이고,
  * 옷의 가슴둘레에 맞춰 크기를 줄이거나 키워요 (옷보다 6% 작게 = 보통 여유).
@@ -25,11 +27,23 @@ type Section = { y: number; w: number; df: number; db: number; cz?: number; n?: 
 /** 단면에 더하는 굴곡: 높이 y 근처(아래 below, 위 above 폭), 각도 phi(도, 90 = 앞) 근처(spread 폭)에 amp cm */
 type Bump = { y: number; below: number; above: number; phi: number; spread: number; amp: number };
 
+type P3 = [number, number, number];
+/**
+ * 머리 조각: 덩어리 목록 (cm, y = 턱 끝에서 잰 높이, z = 앞+). 큰 덩어리(머리뼈·얼굴·아래턱)는 아주 부드럽게,
+ * 작은 것(턱끝·코)은 덜 부드럽게 붙여요. sym = 왼쪽에도, sub = 파냄. k = 앞 덩어리들과 이어 붙이는 부드러움 (cm).
+ * 눈·입술·귀를 새기면 오히려 우스꽝스러워서(웃는 얼굴처럼 보임) 매장 마네킹처럼 코만 남김
+ */
+type Part =
+  | { skull: { y: number; z: number; w: number; h: number; f: number; b: number; n: number } }
+  | { e: P3; r: P3; k: number; sym?: boolean; sub?: boolean }
+  | { rod: [P3, number, P3, number]; k: number; sym?: boolean };
+type FaceSpec = Part[];
+
 type Spec = {
   torso: Section[];
   bumps: Bump[];
-  head: Section[];
-  headBumps: Bump[];
+  /** 머리 (덩어리를 부드럽게 합쳐 조각, cm · 턱 끝 = 0) */
+  face: FaceSpec;
   /** 턱 끝 높이 (겨드랑이 기준) */
   chin: number;
   /** 팔: 어깨 꼭대기에서 잰 거리 s, 옆 반지름, 앞뒤 반지름 */
@@ -37,8 +51,9 @@ type Spec = {
   /** 허벅지: 가운데에서 떨어진 거리, 시작·끝 높이, 무릎 쪽으로 모이는 정도, 위에서 잰 거리별 반지름 */
   thigh: { x: number; top: number; bottom: number; inward: number; r: [number, number][] };
   neck: number;
-  /** 목 밑동 단면의 높이 (요크 목둘레가 걸리는 자리) */
+  /** 목 밑동 높이 (요크 목둘레가 걸리는 자리)와 그 자리 목둘레를 정하는 반너비·반깊이 */
   neckY: number;
+  neckFit: { w: number; d: number };
   /** 손목 (팔 위에서 잰 거리 s) */
   wrist: number;
   /** 손 크기: 길이·너비 배율 (여자 손이 기준) */
@@ -60,11 +75,15 @@ const FEMALE: Spec = {
     { y: 8.5, w: 17.4, df: 6.6, db: 7.2, cz: -0.3, n: 3 },
     { y: 10.6, w: 14, df: 5.4, db: 6.1, cz: -0.5, n: 2.7 },
     { y: 12.2, w: 8.6, df: 5, db: 5.6, cz: -0.3, n: 2.3 },
-    { y: 13.6, w: 5.9, df: 5.1, db: 5.3, cz: 0.1, n: 2 },
-    { y: 17.5, w: 5.1, df: 4.75, db: 4.8, cz: 1, n: 2 },
-    { y: 21, w: 4.85, df: 4.55, db: 4.5, cz: 1.6, n: 2 },
-    { y: 22, w: 4, df: 3.5, db: 3.5, cz: 1.8, n: 2 },
-    { y: 22.6, w: 0.5, df: 0.5, db: 0.5, cz: 1.8 },
+    // 목: 턱 끝보다 4~5cm 뒤에서 올라가 턱 밑이 드러남. 뒤쪽은 뒤통수 밑(머리뼈 아래)으로 들어감
+    { y: 13.6, w: 5.7, df: 5, db: 5.2, cz: -0.8, n: 2 },
+    { y: 15.6, w: 5.1, df: 4.75, db: 4.85, cz: -1.1, n: 2 },
+    { y: 18.2, w: 4.9, df: 4.55, db: 4.6, cz: -1.35, n: 2 },
+    { y: 20.7, w: 4.8, df: 4.4, db: 4.55, cz: -1.5, n: 2 },
+    { y: 23.5, w: 4.7, df: 4.2, db: 4.6, cz: -1.8, n: 2 },
+    { y: 25.8, w: 4.2, df: 3.6, db: 4.4, cz: -2.3, n: 2 },
+    { y: 26.8, w: 2.6, df: 2.2, db: 2.8, cz: -2.5, n: 2 },
+    { y: 27.2, w: 0.5, df: 0.5, db: 0.5, cz: -2.5 },
   ],
   bumps: [
     // 가슴
@@ -84,33 +103,22 @@ const FEMALE: Spec = {
     { y: 9.5, below: 1.3, above: 1.3, phi: 50, spread: 18, amp: 0.35 },
     { y: 9.5, below: 1.3, above: 1.3, phi: 130, spread: 18, amp: 0.35 },
   ],
-  head: [
-    { y: -0.6, w: 1.2, df: 0.9, db: 0.9, cz: 3.4 },
-    { y: 0.3, w: 3, df: 2.4, db: 2.4, cz: 3.2 },
-    { y: 2.4, w: 5.3, df: 4.4, db: 5, cz: 1.9, n: 2.1 },
-    { y: 5, w: 6.4, df: 6, db: 6.9, cz: 1, n: 2.2 },
-    { y: 8.2, w: 6.9, df: 6.9, db: 8.3, cz: 0.6, n: 2.2 },
-    { y: 11.2, w: 7.2, df: 7.4, db: 9.3, cz: 0.3, n: 2.2 },
-    { y: 14.2, w: 7.4, df: 7.4, db: 9.9, cz: 0, n: 2.2 },
-    { y: 17.2, w: 7.3, df: 6.9, db: 9.9, cz: -0.4, n: 2.1 },
-    { y: 20, w: 6.3, df: 5.6, db: 8.7, cz: -0.8, n: 2 },
-    { y: 22, w: 4.2, df: 3.6, db: 6, cz: -1, n: 2 },
-    { y: 23.1, w: 1, df: 0.8, db: 1.4, cz: -1 },
-  ],
-  headBumps: [
-    // 코
-    { y: 8.8, below: 1.4, above: 2.6, phi: 90, spread: 8, amp: 1.7 },
-    // 눈두덩 (살짝 들어감)
-    { y: 11.8, below: 1.2, above: 1.2, phi: 63, spread: 11, amp: -0.5 },
-    { y: 11.8, below: 1.2, above: 1.2, phi: 117, spread: 11, amp: -0.5 },
-    // 이마뼈
-    { y: 13.6, below: 1, above: 1.5, phi: 68, spread: 16, amp: 0.25 },
-    { y: 13.6, below: 1, above: 1.5, phi: 112, spread: 16, amp: 0.25 },
-    // 입술
-    { y: 5.6, below: 0.9, above: 1.1, phi: 90, spread: 13, amp: 0.35 },
-    // 광대
-    { y: 10, below: 1.8, above: 1.6, phi: 40, spread: 14, amp: 0.35 },
-    { y: 10, below: 1.8, above: 1.6, phi: 140, spread: 14, amp: 0.35 },
+  face: [
+    { skull: { y: 15, z: -1, w: 7.5, h: 7.5, f: 8.4, b: 9, n: 2.4 } },
+    // 뒤통수, 꼭지돌기(귀 뒤 목이 붙는 자리)
+    { e: [0, 11.6, -5], r: [5.6, 4.6, 4.5], k: 2.5 },
+    { e: [4.3, 8.6, -2.6], r: [2.2, 2.6, 2.6], k: 2, sym: true },
+    // 얼굴: 이마 밑에서 턱까지 볼록한 달걀형 (눈자리가 꺼져 보이지 않게 눈 높이까지 꽉 참)
+    { e: [0, 10, 1.8], r: [5.9, 7.5, 5.8], k: 3 },
+    // 광대활(앞에서 볼 때 얼굴 폭), 깨물근(볼에서 턱모서리까지 살)
+    { rod: [[5, 10.6, 3.2], 1, [5.6, 10.4, -0.8], 1], k: 2.5, sym: true },
+    { e: [4.4, 6, 0.6], r: [1.5, 2.8, 2.2], k: 2.5, sym: true },
+    // 아래턱(입 둘레까지 한 덩어리, 턱 밑이 드러남), 턱끝
+    { e: [0, 4, 2.8], r: [4.2, 3.6, 4.6], k: 2.5 },
+    { e: [0, 1.8, 5.2], r: [2.1, 1.9, 2.3], k: 2.5 },
+    // 콧등과 둥근 코끝 — 눈·입·귀는 새기지 않는 매장 마네킹(에그헤드) 얼굴
+    { rod: [[0, 12.7, 6.9], 0.58, [0, 8.6, 8.55], 0.66], k: 1.4 },
+    { e: [0, 8.25, 8.4], r: [0.86, 0.7, 0.78], k: 1.2 },
   ],
   chin: 19.5,
   arm: [
@@ -148,8 +156,9 @@ const FEMALE: Spec = {
       [31.6, 0.4],
     ],
   },
-  neck: 5.2,
+  neck: 4.8,
   neckY: 13.6,
+  neckFit: { w: 5.9, d: 5.2 },
   wrist: 45.5,
   hand: { s: 1, w: 1 },
 };
@@ -169,11 +178,14 @@ const MALE: Spec = {
     { y: 9, w: 20.6, df: 7.6, db: 8.2, cz: -0.3, n: 3.2 },
     { y: 11.4, w: 16.6, df: 6.2, db: 7, cz: -0.5, n: 2.9 },
     { y: 13.1, w: 11.6, df: 6, db: 6.8, cz: -0.3, n: 2.4 },
-    { y: 14.6, w: 6.6, df: 5.9, db: 6.2, cz: 0.1, n: 2 },
-    { y: 18.8, w: 5.8, df: 5.5, db: 5.5, cz: 0.9, n: 2 },
-    { y: 22, w: 5.6, df: 5.25, db: 5.2, cz: 1.5, n: 2 },
-    { y: 23, w: 4.6, df: 4.1, db: 4.1, cz: 1.7, n: 2 },
-    { y: 23.6, w: 0.5, df: 0.5, db: 0.5, cz: 1.7 },
+    { y: 14.6, w: 6.6, df: 5.7, db: 6, cz: -0.9, n: 2 },
+    { y: 16.8, w: 6, df: 5.4, db: 5.6, cz: -1.2, n: 2 },
+    { y: 19.2, w: 5.8, df: 5.3, db: 5.5, cz: -1.45, n: 2 },
+    { y: 21.8, w: 5.6, df: 5, db: 5.4, cz: -1.65, n: 2 },
+    { y: 24.8, w: 5.4, df: 4.7, db: 5.3, cz: -2, n: 2 },
+    { y: 27.2, w: 4.6, df: 4, db: 5, cz: -2.5, n: 2 },
+    { y: 28.2, w: 2.8, df: 2.4, db: 3, cz: -2.7, n: 2 },
+    { y: 28.6, w: 0.5, df: 0.5, db: 0.5, cz: -2.7 },
   ],
   bumps: [
     // 대흉근
@@ -190,29 +202,21 @@ const MALE: Spec = {
     // 쇄골
     { y: 10, below: 1.3, above: 1.3, phi: 50, spread: 18, amp: 0.45 },
     { y: 10, below: 1.3, above: 1.3, phi: 130, spread: 18, amp: 0.45 },
+    // 울대뼈
+    { y: 18, below: 1.3, above: 1.1, phi: 90, spread: 13, amp: 0.55 },
   ],
-  head: [
-    { y: -0.7, w: 2.1, df: 1.2, db: 1.2, cz: 3.5 },
-    { y: 0.3, w: 4.6, df: 2.9, db: 3, cz: 3.3, n: 2.2 },
-    { y: 2.4, w: 5.95, df: 4.9, db: 5.3, cz: 2, n: 2.3 },
-    { y: 5, w: 7, df: 6.3, db: 7.2, cz: 1.1, n: 2.35 },
-    { y: 8.3, w: 7.2, df: 7.2, db: 8.6, cz: 0.6, n: 2.2 },
-    { y: 11.4, w: 7.5, df: 7.7, db: 9.6, cz: 0.3, n: 2.2 },
-    { y: 14.5, w: 7.7, df: 7.7, db: 10.3, cz: 0, n: 2.2 },
-    { y: 17.6, w: 7.6, df: 7.2, db: 10.3, cz: -0.4, n: 2.1 },
-    { y: 20.5, w: 6.6, df: 5.8, db: 9, cz: -0.8, n: 2 },
-    { y: 22.6, w: 4.4, df: 3.8, db: 6.2, cz: -1, n: 2 },
-    { y: 23.8, w: 1, df: 0.8, db: 1.4, cz: -1 },
-  ],
-  headBumps: [
-    { y: 9, below: 1.5, above: 2.8, phi: 90, spread: 8, amp: 1.9 },
-    { y: 12.1, below: 1.2, above: 1.2, phi: 63, spread: 11, amp: -0.55 },
-    { y: 12.1, below: 1.2, above: 1.2, phi: 117, spread: 11, amp: -0.55 },
-    { y: 13.9, below: 1, above: 1.5, phi: 68, spread: 16, amp: 0.5 },
-    { y: 13.9, below: 1, above: 1.5, phi: 112, spread: 16, amp: 0.5 },
-    { y: 5.8, below: 0.9, above: 1.1, phi: 90, spread: 13, amp: 0.25 },
-    { y: 10.2, below: 1.8, above: 1.6, phi: 40, spread: 14, amp: 0.3 },
-    { y: 10.2, below: 1.8, above: 1.6, phi: 140, spread: 14, amp: 0.3 },
+  face: [
+    { skull: { y: 15.6, z: -1.2, w: 7.75, h: 7.9, f: 8.8, b: 9.4, n: 2.5 } },
+    { e: [0, 12, -5.3], r: [5.9, 4.8, 4.8], k: 2.5 },
+    { e: [4.6, 8.9, -2.8], r: [2.4, 2.8, 2.7], k: 2, sym: true },
+    { e: [0, 10.4, 1.8], r: [6.2, 7.8, 6], k: 3 },
+    { rod: [[5.3, 11, 3.2], 1.05, [5.9, 10.8, -0.9], 1.05], k: 2.5, sym: true },
+    { e: [4.8, 6.2, 0.5], r: [1.7, 3, 2.3], k: 2.5, sym: true },
+    // 남자 아래턱은 넓고 각짐
+    { e: [0, 4.2, 2.8], r: [4.6, 3.8, 4.8], k: 2.5 },
+    { e: [0, 1.9, 5.3], r: [2.5, 2, 2.4], k: 2.5 },
+    { rod: [[0, 13.1, 7.2], 0.64, [0, 9, 8.9], 0.72], k: 1.4 },
+    { e: [0, 8.6, 8.75], r: [0.95, 0.76, 0.84], k: 1.2 },
   ],
   chin: 20.5,
   arm: [
@@ -248,8 +252,9 @@ const MALE: Spec = {
       [33.2, 0.4],
     ],
   },
-  neck: 6,
+  neck: 5.6,
   neckY: 14.6,
+  neckFit: { w: 6.6, d: 6.05 },
   wrist: 49,
   hand: { s: 1.07, w: 1.12 },
 };
@@ -418,6 +423,234 @@ export function loftReach(L: Loft, theta: number, y: number): number {
   return 0;
 }
 
+/* ───────── 머리: 덩어리를 부드럽게 합친 모양을 높이마다 잘라 단면으로 ───────── */
+
+/** 거리 함수 하나 (안 < 0). lo..hi = 영향을 주는 높이 범위 */
+type Prim = { lo: number; hi: number; k: number; sub: boolean; base?: boolean; d: (x: number, y: number, z: number) => number };
+
+function ellipsoid(c: P3, r: P3, k: number, sub = false): Prim {
+  // 부드럽게 붙는 범위까지 넉넉히 (범위를 너무 좁게 자르면 그 높이에서 겉면이 끊겨 줄무늬가 생김)
+  return {
+    lo: c[1] - r[1] - 2 * k - 0.5,
+    hi: c[1] + r[1] + 2 * k + 0.5,
+    k,
+    sub,
+    d(x, y, z) {
+      const X = (x - c[0]) / r[0];
+      const Y = (y - c[1]) / r[1];
+      const Z = (z - c[2]) / r[2];
+      const k0 = Math.sqrt(X * X + Y * Y + Z * Z);
+      const k1 = Math.sqrt((X / r[0]) ** 2 + (Y / r[1]) ** 2 + (Z / r[2]) ** 2);
+      return k1 > 1e-9 ? (k0 * (k0 - 1)) / k1 : -Math.min(r[0], r[1], r[2]);
+    },
+  };
+}
+
+/** 굵기가 변하는 막대 (a에서 ra, b에서 rb) */
+function rod(a: P3, ra: number, b: P3, rb: number, k: number): Prim {
+  const ba: P3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const bb = ba[0] * ba[0] + ba[1] * ba[1] + ba[2] * ba[2] || 1;
+  return {
+    lo: Math.min(a[1] - ra, b[1] - rb) - 2 * k - 0.5,
+    hi: Math.max(a[1] + ra, b[1] + rb) + 2 * k + 0.5,
+    k,
+    sub: false,
+    d(x, y, z) {
+      const px = x - a[0];
+      const py = y - a[1];
+      const pz = z - a[2];
+      const h = Math.max(0, Math.min(1, (px * ba[0] + py * ba[1] + pz * ba[2]) / bb));
+      return Math.hypot(px - ba[0] * h, py - ba[1] * h, pz - ba[2] * h) - (ra + (rb - ra) * h);
+    },
+  };
+}
+
+/** 머리뼈: 가로 단면은 앞뒤 깊이가 다른 둥근 사각형(지수 n), 세로는 타원 */
+function skullPrim(s: Extract<Part, { skull: unknown }>['skull'], k: number): Prim {
+  const m = Math.min(s.w, s.h, s.f, s.b);
+  return {
+    lo: s.y - s.h - k,
+    hi: s.y + s.h + k,
+    k,
+    sub: false,
+    d(x, y, z) {
+      const dz = z - s.z;
+      const X = Math.abs(x) / s.w;
+      const Z = Math.abs(dz) / (dz >= 0 ? s.f : s.b);
+      const Y = (y - s.y) / s.h;
+      const hor = Math.pow(Math.pow(X, s.n) + Math.pow(Z, s.n), 2 / s.n);
+      return (Math.sqrt(hor + Y * Y) - 1) * m;
+    },
+  };
+}
+
+const mirror = (p: P3): P3 => [-p[0], p[1], p[2]];
+
+function skullOf(f: FaceSpec) {
+  const s = f.find((p): p is Extract<Part, { skull: unknown }> => 'skull' in p);
+  return s!.skull;
+}
+
+/** 덩어리 목록 → 거리 함수들 (왼쪽 짝 포함, 적힌 순서대로 붙이고 파냄) */
+function headPrims(f: FaceSpec): Prim[] {
+  const out: Prim[] = [];
+  for (const p of f) {
+    if ('skull' in p) out.push({ ...skullPrim(p.skull, 0), base: true });
+    else if ('e' in p) {
+      // 큰 덩어리(반지름 1.5cm 넘음)는 단면 가운데를 정할 때도 씀 (코·입술·귀처럼 작은 것은 빼서 가운데가 튀지 않게)
+      const base = !p.sub && Math.min(...p.r) >= 1.5;
+      out.push({ ...ellipsoid(p.e, p.r, p.k, p.sub), base });
+      if (p.sym) out.push({ ...ellipsoid(mirror(p.e), p.r, p.k, p.sub), base });
+    } else {
+      const [a, ra, b, rb] = p.rod;
+      out.push(rod(a, ra, b, rb, p.k));
+      // 가운데를 가로지르는 막대(눈썹뼈)는 이미 양쪽
+      if (p.sym) out.push(rod(mirror(a), ra, mirror(b), rb, p.k));
+    }
+  }
+  return out;
+}
+
+function smin(a: number, b: number, k: number) {
+  const h = Math.max(k - Math.abs(a - b), 0) / k;
+  return Math.min(a, b) - h * h * k * 0.25;
+}
+
+function evalPrims(ps: Prim[], x: number, y: number, z: number): number {
+  let d = Infinity;
+  for (const p of ps) {
+    const v = p.d(x, y, z);
+    if (p.sub) d = -smin(-d, v, p.k);
+    else d = d === Infinity || p.k <= 0 ? Math.min(d, v) : smin(d, v, p.k);
+  }
+  return d;
+}
+
+/**
+ * 높이마다 잘라 단면으로 (가운데에서 바깥으로 가장 먼 겉면까지의 거리). 귀 뒤 틈처럼 가운데에서
+ * 안 보이는 곳은 메워짐. 단면 가운데는 그 높이 가운데 줄(x = 0)의 앞뒤 중간
+ */
+function sampleHead(ps: Prim[], y0: number, y1: number, step: number, A: number): Loft {
+  const out: Loft = { y: [], cx: [], cz: [], A, r: [] };
+  const R = 16;
+  type Row = { y: number; act: Prim[]; cz: number };
+  const rows: Row[] = [];
+  // 1) 높이마다 가운데 줄(x = 0)의 앞뒤 끝 (큰 덩어리만) → 가운데
+  for (let y = y0; y <= y1 + 1e-9; y += step) {
+    const act = ps.filter((p) => y >= p.lo && y <= p.hi);
+    const base = act.filter((p) => p.base);
+    const fb = (z: number) => evalPrims(base.length ? base : act, 0, y, z);
+    let zmin = Infinity;
+    let zmax = -Infinity;
+    for (let z = -14; z <= 14; z += 0.2) {
+      if (fb(z) < 0) {
+        zmin = Math.min(zmin, z);
+        zmax = Math.max(zmax, z);
+      }
+    }
+    if (!Number.isFinite(zmin)) {
+      rows.push({ y, act, cz: NaN });
+      continue;
+    }
+    // 끝을 반으로 나눠 좁힘 (격자 0.2cm 계단이 단면마다 튀지 않게)
+    const edge = (inside: number, outside: number) => {
+      let a = inside;
+      let b = outside;
+      for (let k = 0; k < 10; k++) {
+        const m = (a + b) / 2;
+        if (fb(m) < 0) a = m;
+        else b = m;
+      }
+      return (a + b) / 2;
+    };
+    rows.push({ y, act, cz: (edge(zmin, zmin - 0.2) + edge(zmax, zmax + 0.2)) / 2 });
+  }
+  const first = rows.findIndex((x) => !Number.isNaN(x.cz));
+  const last = rows.length - 1 - [...rows].reverse().findIndex((x) => !Number.isNaN(x.cz));
+  const keep = rows.slice(first, last + 1);
+  // 2) 가운데를 위아래로 부드럽게 (단면마다 가운데가 흔들리면 겉면 그늘이 물결져 보임)
+  const raw = keep.map((x) => x.cz);
+  const w = [1, 2, 3, 2, 1];
+  keep.forEach((row, i) => {
+    let s = 0;
+    let ws = 0;
+    for (let d = -2; d <= 2; d++) {
+      const v = raw[i + d];
+      if (v === undefined) continue;
+      s += v * w[d + 2]!;
+      ws += w[d + 2]!;
+    }
+    row.cz = s / ws;
+  });
+  // 3) 가운데에서 바깥으로 가장 먼 겉면까지 (귀 뒤 틈처럼 가운데에서 안 보이는 곳은 메워짐)
+  const radii = keep.map((row) => {
+    const f = (x: number, z: number) => evalPrims(row.act, x, row.y, z);
+    const r: number[] = [];
+    for (let a = 0; a < A; a++) {
+      const phi = (2 * Math.PI * a) / A;
+      const c = Math.cos(phi);
+      const sn = Math.sin(phi);
+      // 바깥에서 안으로 걸어 들어오다 처음 안에 닿는 곳 → 그 사이를 반으로 나눠 좁힘
+      let out0 = R;
+      let t = R;
+      let v = f(c * t, row.cz + sn * t);
+      while (t > 0 && v >= 0) {
+        out0 = t;
+        t -= Math.max(0.12, Math.min(1.5, v * 0.6));
+        v = f(c * t, row.cz + sn * t);
+      }
+      if (t <= 0) {
+        r.push(0.05);
+        continue;
+      }
+      let lo = t;
+      let hi = out0;
+      for (let k = 0; k < 12; k++) {
+        const m = (lo + hi) / 2;
+        if (f(c * m, row.cz + sn * m) < 0) lo = m;
+        else hi = m;
+      }
+      r.push((lo + hi) / 2);
+    }
+    return r;
+  });
+  // 위아래는 옆 단면 가운데의 아주 작은 고리로 닫음
+  const cap = new Array<number>(A).fill(0.05);
+  const put = (y: number, cz: number, r: number[]) => {
+    out.y.push(y);
+    out.cx.push(0);
+    out.cz.push(cz);
+    out.r.push(...r);
+  };
+  put(keep[0]!.y - step * 0.5, keep[0]!.cz, cap);
+  keep.forEach((row, i) => put(row.y, row.cz, radii[i]!));
+  put(keep[keep.length - 1]!.y + step * 0.5, keep[keep.length - 1]!.cz, cap);
+  return out;
+}
+
+const unitHeads = new Map<BodyKind, Loft>();
+/** 기준 크기 머리 (턱 끝 y = 0) — 종류마다 한 번 만들어 둠 */
+export function unitHead(kind: BodyKind): Loft {
+  const hit = unitHeads.get(kind);
+  if (hit) return hit;
+  const f = BODY_SPECS[kind].face;
+  const sk = skullOf(f);
+  const L = sampleHead(headPrims(f), -0.8, sk.y + sk.h + 0.6, 0.35, 144);
+  unitHeads.set(kind, L);
+  return L;
+}
+
+/** 머리 꼭대기 (턱 끝에서 잰 높이, 기준 크기) */
+export function headTop(kind: BodyKind): number {
+  const L = unitHead(kind);
+  return L.y[L.y.length - 1]!;
+}
+
+/** 단면 쌓기를 s배로 키워 턱 끝을 y0에 */
+function scaleLoft(L: Loft, s: number, y0: number): Loft {
+  return { y: L.y.map((y) => y0 + y * s), cx: L.cx.map((x) => x * s), cz: L.cz.map((z) => z * s), A: L.A, r: L.r.map((r) => r * s) };
+}
+
 /** 곧은 축 (허벅지, 받침 목): a에서 b로, t = a에서 잰 거리 */
 export function lineAxis(a: Vec3, b: Vec3): Axis {
   const len = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) || 1;
@@ -521,15 +754,16 @@ export function specChest(kind: BodyKind): number {
 }
 
 const headCache = new Map<BodyKind, number>();
-/** 기준 머리의 가장 굵은 둘레 (이마~정수리 사이) */
+/** 기준 머리의 가장 굵은 둘레 (귀 바로 위 이마~뒤통수) */
 export function specHeadGirth(kind: BodyKind): number {
   const hit = headCache.get(kind);
   if (hit) return hit;
-  const spec = BODY_SPECS[kind];
-  const H = loftFrom(spec.head, spec.headBumps, { sw: 1, sh: 1, y0: 0, step: 0.5 });
+  const H = unitHead(kind);
+  const sk = skullOf(BODY_SPECS[kind].face);
   let g = 0;
   H.y.forEach((y, i) => {
-    if (y >= 11 && y <= 18) g = Math.max(g, loftGirth(H, i));
+    // 귀 위 이마~뒤통수 둘레 (모자 둘레를 재는 자리)
+    if (y >= sk.y - 1.5 && y <= sk.y + 2.5) g = Math.max(g, loftGirth(H, i));
   });
   headCache.set(kind, g);
   return g;
@@ -624,9 +858,9 @@ export function bodyFor(kind: BodyKind, L: Layout, tubes: Map<ArtPiece, Tube>, a
   const sh = Math.max(0.6, Math.min(1.15, Math.pow(sw, 0.6)));
   const armpitY = L.topY + 1.5 * sh;
   const torso = loftFrom(spec.torso, spec.bumps, { sw, sh, y0: armpitY });
-  const hs = ((sw + sh) / 2) * (kind === 'male' ? 1.02 : 1.05);
+  const hs = (sw + sh) / 2;
   const chinY = armpitY + spec.chin * sh;
-  const head = loftFrom(spec.head, spec.headBumps, { sw: hs, sh: hs, y0: chinY, step: 0.5 });
+  const head = scaleLoft(unitHead(kind), hs, chinY);
 
   const arms: Limb[] = [];
   const hands: Limb[] = [];
@@ -669,8 +903,8 @@ export function bodyFor(kind: BodyKind, L: Layout, tubes: Map<ArtPiece, Tube>, a
     limbs,
     pole: { a: [0, crotchY + 1, -0.6 * sw], b: [0, baseY, -0.6 * sw], r: 0.9 * Math.max(0.8, sw) },
     base: { c: [0, baseY - 0.8, -0.6 * sw], r: 13 * sw, h: 1.6 },
-    top: chinY + spec.head[spec.head.length - 1]!.y * hs,
-    neck: { y: armpitY + neckBase.y * sh, rx: neckBase.w * sw, rz: ((neckBase.df + neckBase.db) / 2) * sw },
+    top: chinY + headTop(kind) * hs,
+    neck: { y: armpitY + neckBase.y * sh, rx: spec.neckFit.w * sw, rz: spec.neckFit.d * sw },
   };
 }
 
@@ -688,21 +922,24 @@ export function standFor(kind: BodyKind, L: Layout): BodyModel {
   // 둘레가 10% 커져 모자가 정수리에 얹혀 버려요)
   const hs = ellipsePerimeter(h.rh, h.rz) / specHeadGirth(kind);
   const crown = h.cy + h.rv;
-  const chinY = crown - spec.head[spec.head.length - 1]!.y * hs + HAT_LIFT * hs;
-  const head = loftFrom(spec.head, spec.headBumps, { sw: hs, sh: hs, y0: chinY, step: 0.5 });
-  const neckR = spec.neck * hs * 1.02;
-  const neckTop: Vec3 = [0, chinY + 4 * hs, 1.2 * hs];
-  const neckBottom: Vec3 = [0, chinY - 9 * hs, 0.2 * hs];
-  const neckAxis = lineAxis(neckTop, neckBottom);
+  const top = headTop(kind);
+  const chinY = crown - top * hs + HAT_LIFT * hs;
+  const head = scaleLoft(unitHead(kind), hs, chinY);
+  // 목: 몸에 붙은 목과 같은 자리 — 턱 끝보다 뒤에서 올라가 뒤통수 밑으로 들어가고, 아래는 받침으로 퍼짐
+  const neckR = spec.neck * hs;
+  const neckTop: Vec3 = [0, chinY + 6.8 * hs, -2.3 * hs];
+  const neckBottom: Vec3 = [0, chinY - 9 * hs, -0.9 * hs];
   const nl = Math.hypot(neckBottom[0] - neckTop[0], neckBottom[1] - neckTop[1], neckBottom[2] - neckTop[2]);
   const neck: Limb = {
-    axis: neckAxis,
+    axis: lineAxis(neckTop, neckBottom),
     rings: smoothKeys(
       [
-        { t: 0, rx: neckR * 0.95, rz: neckR * 0.95 },
-        { t: nl * 0.5, rx: neckR, rz: neckR },
-        { t: nl * 0.9, rx: neckR * 1.18, rz: neckR * 1.1 },
-        { t: nl, rx: neckR * 1.25, rz: neckR * 1.12 },
+        { t: 0, rx: 0.4, rz: 0.4 },
+        { t: 0.7 * hs, rx: neckR * 0.72, rz: neckR * 0.7 },
+        { t: 2.2 * hs, rx: neckR * 0.97, rz: neckR * 0.94 },
+        { t: nl * 0.55, rx: neckR, rz: neckR * 0.96 },
+        { t: nl * 0.9, rx: neckR * 1.16, rz: neckR * 1.06 },
+        { t: nl, rx: neckR * 1.22, rz: neckR * 1.1 },
         { t: nl + 0.8, rx: neckR * 0.6, rz: neckR * 0.6 },
         { t: nl + 1, rx: 0.3, rz: 0.3 },
       ],
@@ -719,7 +956,7 @@ export function standFor(kind: BodyKind, L: Layout): BodyModel {
     limbs: [neck],
     pole: { a: [0, neckBottom[1] - 0.5, neckBottom[2]], b: [0, baseY, neckBottom[2]], r: 0.8 },
     base: { c: [0, baseY - 0.8, neckBottom[2]], r: h.rh * 1.05, h: 1.6 },
-    top: chinY + spec.head[spec.head.length - 1]!.y * hs,
+    top: chinY + top * hs,
     neck: { y: neckBottom[1], rx: neckR, rz: neckR },
   };
 }
