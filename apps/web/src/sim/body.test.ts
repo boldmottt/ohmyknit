@@ -41,7 +41,7 @@ const ARMPIT = 45.5;
 describe('사람 모양 마네킹', () => {
   it('여자 몸: 허리가 가슴·엉덩이보다 가늘고, 치수가 실제 사람 비율', () => {
     const L = emptyBody('female').torso!;
-    const bust = girthAt(L, ARMPIT - 7);
+    const bust = maxGirth(L, ARMPIT - 12, ARMPIT);
     const waist = girthAt(L, ARMPIT - 25);
     const hip = girthAt(L, ARMPIT - 43);
     expect(bust).toBeGreaterThan(80);
@@ -70,8 +70,8 @@ describe('사람 모양 마네킹', () => {
     const chin = H.y[0]!;
     const front = (L: Loft, y: number) => loftReach(L, Math.PI / 2, y);
     const back = (L: Loft, y: number) => -loftReach(L, -Math.PI / 2, y);
-    // 턱 끝 바로 위: 목 앞면(목젖 쪽)이 턱 앞면보다 3.5cm 넘게 뒤 (예전엔 목이 턱 앞까지 나와 턱과 붙어 보였음)
-    expect(front(H, chin + 1.5) - front(T, chin + 1.5)).toBeGreaterThan(3.5);
+    // 턱 끝 바로 위: 목 앞면(목젖 쪽)이 턱 앞면보다 3cm 넘게 뒤 (예전엔 목이 턱 앞까지 나와 턱과 붙어 보였음)
+    expect(front(H, chin + 2.2) - front(T, chin + 2.2)).toBeGreaterThan(3);
     // 뒤통수(턱 끝 위 10cm)가 목덜미(턱 끝 위 4cm)보다 1.5cm 넘게 뒤로
     expect(back(H, chin + 10)).toBeLessThan(back(T, chin + 4) - 1.5);
     // 머리 높이(턱 끝 ~ 정수리)는 사람 비율 (여자 22.5, 남자 23.5 근처)
@@ -98,7 +98,7 @@ describe('사람 모양 마네킹', () => {
     expect(body.hands.length).toBe(4);
   });
 
-  it.each(BODY_KINDS)('손 (%s): 납작한 손바닥이 손목 아래로, 끝은 둥글게', (kind) => {
+  it.each(BODY_KINDS)('손 (%s): 납작한 손바닥, 엄지, 따로 떨어진 손가락 넷이 손바닥 아래로', (kind) => {
     const b = emptyBody(kind);
     const palms = b.hands.filter((h) => (h.n ?? 2) > 2);
     const thumbs = b.hands.filter((h) => (h.n ?? 2) === 2);
@@ -108,14 +108,39 @@ describe('사람 모양 마네킹', () => {
       // 가장 넓은 자리(손가락 뿌리)에서 너비가 두께의 두 배 넘게
       const knuckle = h.rings.reduce((a, r) => (r.rz > a.rz ? r : a));
       expect(knuckle.rz).toBeGreaterThan(knuckle.rx * 2);
-      expect(knuckle.rz).toBeGreaterThan(3.5);
-      const tip = h.axis.at(h.rings[0]!.t).p;
-      const wrist = h.axis.at(h.rings[h.rings.length - 1]!.t).p;
-      expect(wrist[1] - tip[1]).toBeGreaterThan(15);
-      // 손가락 끝은 뾰족하지 않고 둥글게 줄어듦: 끝 1cm 전에도 너비가 남아 있음
-      const nearTip = h.rings.find((r) => r.t >= h.rings[0]!.t + 1)!;
-      expect(nearTip.rz).toBeGreaterThan(1.5);
+      expect(knuckle.rz).toBeGreaterThan(3.3);
     }
+    // 손가락: 팔마다 넷 (+ 발 둘), 손바닥 끝보다 아래로 내려가고 끝은 둥글게
+    const fingers = b.details.filter((d) => (d.n ?? 2) === 2);
+    expect(fingers.length).toBe(8);
+    for (const f of fingers) {
+      const tip = f.axis.at(f.rings[0]!.t).p;
+      const root = f.axis.at(f.rings[f.rings.length - 1]!.t).p;
+      expect(root[1] - tip[1]).toBeGreaterThan(4.5);
+      const near = f.rings.find((r) => r.t >= f.rings[0]!.t + 0.25)!;
+      expect(near.rx).toBeGreaterThan(0.25);
+    }
+  });
+
+  it.each(BODY_KINDS)('다리 (%s): 엉덩이 안에서 발목까지, 발은 바닥 판 위에', (kind) => {
+    const b = emptyBody(kind);
+    expect(b.limbs.length).toBe(2);
+    const feet = b.details.filter((d) => (d.n ?? 2) > 2);
+    expect(feet.length).toBe(2);
+    const floor = b.base!.c[1] + b.base!.h / 2;
+    for (const f of feet) {
+      // 발바닥이 판에 닿음 (1cm 안)
+      let low = Infinity;
+      for (const r of f.rings) low = Math.min(low, f.axis.at(r.t).p[1] - r.rz);
+      expect(Math.abs(low - floor)).toBeLessThan(1);
+    }
+    // 키: 패션 마네킹 (여자 175~185, 남자 182~192)
+    const height = b.top - floor;
+    if (kind === 'female') expect(height).toBeGreaterThan(175);
+    else expect(height).toBeGreaterThan(182);
+    expect(height).toBeLessThan(kind === 'female' ? 185 : 192);
+    // 이음선: 팔마다 셋 + 몸통 선
+    expect(b.seams.length).toBeGreaterThan(6);
   });
 
   it.each(BODY_KINDS)('허벅지 (%s): 윗끝이 엉덩이 옆으로 삐져나오지 않음', (kind) => {

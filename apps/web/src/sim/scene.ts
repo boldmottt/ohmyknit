@@ -46,10 +46,13 @@ export class TexCache {
   }
 }
 
-/** 마네킹: 매끈한 유광 섬유 느낌의 밝은 회베이지 */
-const FORM_COLOR = 0xddd6ce;
-const WOOD_COLOR = 0xb48a5c;
+/** 마네킹: 매장 마네킹처럼 무광 회색 */
+const FORM_COLOR = 0xbdbdbb;
 const POLE_COLOR = 0x9a9aa2;
+/** 발밑 판: 마네킹보다 조금 진한 회색 */
+const BASE_COLOR = 0x9d9d9b;
+/** 이음선: 마네킹 겉면의 가는 홈 */
+const SEAM_COLOR = 0x8c8c8a;
 
 function formMesh(sheet: Sheet, mat: THREE.Material, occ: Occupancy | undefined, name: string): THREE.Mesh {
   const m = new THREE.Mesh(patch(occ ? withOcclusion(sheet, occ) : sheet, 0, sheet.rows, 0, 1)!, mat);
@@ -60,7 +63,7 @@ function formMesh(sheet: Sheet, mat: THREE.Material, occ: Occupancy | undefined,
 }
 
 function formMaterial() {
-  const mat = new THREE.MeshPhysicalMaterial({ color: FORM_COLOR, roughness: 0.5, metalness: 0, clearcoat: 0.3, clearcoatRoughness: 0.5 });
+  const mat = new THREE.MeshPhysicalMaterial({ color: FORM_COLOR, roughness: 0.62, metalness: 0, clearcoat: 0.06, clearcoatRoughness: 0.6 });
   mat.onBeforeCompile = (shader) => addOcclusion(shader, 0.75);
   mat.customProgramCacheKey = () => 'form-ao-2';
   return mat;
@@ -78,7 +81,7 @@ function disposeGroup(g: THREE.Object3D) {
   });
 }
 
-/** 사람 모양 마네킹: 몸통·머리(단면 쌓기), 팔·손·엄지·허벅지(관), 받침대 */
+/** 사람 모양 마네킹: 몸통·머리(단면 쌓기), 팔·손·손가락·다리·발(관), 이음선, 발밑 판 */
 function bodyGroup(b: BodyModel, occ: Occupancy | undefined, key: string): THREE.Group {
   const hit = formCache.get(key);
   if (hit) return hit.clone();
@@ -90,6 +93,19 @@ function bodyGroup(b: BodyModel, occ: Occupancy | undefined, key: string): THREE
   for (const arm of b.arms) grp.add(formMesh(limbSheet(arm, 56), mat, occ, 'arm'));
   for (const hand of b.hands) grp.add(formMesh(limbSheet(hand, 48), mat, occ, 'hand'));
   for (const limb of b.limbs) grp.add(formMesh(limbSheet(limb, 48), mat, occ, 'limb'));
+  for (const d of b.details) grp.add(formMesh(limbSheet(d, 24), mat, occ, 'detail'));
+  if (b.seams.length) {
+    const seamMat = new THREE.MeshStandardMaterial({ color: SEAM_COLOR, roughness: 0.8 });
+    for (const line of b.seams) {
+      const pts = line.map((p) => new THREE.Vector3(...p));
+      const closed = pts.length > 2 && pts[0]!.distanceTo(pts[pts.length - 1]!) < 1e-6;
+      if (closed) pts.pop();
+      const g = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, closed, 'centripetal'), pts.length * 2, 0.08, 5, closed);
+      const m = new THREE.Mesh(g, seamMat);
+      m.name = 'seam';
+      grp.add(m);
+    }
+  }
   if (b.pole) {
     const { a, b: e, r } = b.pole;
     const len = Math.hypot(e[0] - a[0], e[1] - a[1], e[2] - a[2]);
@@ -100,7 +116,7 @@ function bodyGroup(b: BodyModel, occ: Occupancy | undefined, key: string): THREE
     grp.add(pole);
   }
   if (b.base) {
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(b.base.r * 0.96, b.base.r, b.base.h, 64), new THREE.MeshStandardMaterial({ color: WOOD_COLOR, roughness: 0.55 }));
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(b.base.r * 0.97, b.base.r, b.base.h, 64), new THREE.MeshStandardMaterial({ color: BASE_COLOR, roughness: 0.45, metalness: 0.1 }));
     base.position.set(...b.base.c);
     base.castShadow = true;
     base.receiveShadow = true;
