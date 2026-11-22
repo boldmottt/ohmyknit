@@ -174,10 +174,10 @@ describe('사람 모양 마네킹', () => {
       // 겨드랑이에서 손끝까지 50cm 넘게 (손끝이 허벅지 중간), 팔은 몸 옆에 내려와 있음 (빈 마네킹)
       expect(top[1] - tip[1]).toBeGreaterThan(50);
       expect(Math.abs(tip[0])).toBeLessThan(40);
-      // 손바닥 자리(손끝에서 3~10cm 위)는 손 크기 (반너비 2~7cm, 손가락을 벌린 손이면 둘 다 넓음)
+      // 손바닥 자리(손끝에서 3~10cm 위)는 손 크기 (반너비 2~8cm — 앞으로 나온 엄지까지, 손가락을 벌린 손이면 둘 다 넓음)
       const palm = a.rings.filter((r) => r.t > a.rings[0]!.t + 3 && r.t < a.rings[0]!.t + 10).reduce((m, r) => (Math.max(r.rx, r.rz) > Math.max(m.rx, m.rz) ? r : m));
       expect(Math.max(palm.rx, palm.rz)).toBeGreaterThan(2);
-      expect(Math.max(palm.rx, palm.rz)).toBeLessThan(7);
+      expect(Math.max(palm.rx, palm.rz)).toBeLessThan(8);
       expect(Math.min(palm.rx, palm.rz)).toBeGreaterThan(0.8);
     }
   });

@@ -15,7 +15,8 @@ export type Slice = { y: number; seg: Float32Array; loop: Int32Array; loops: Loo
 /** 고리 하나: 선분 번호들과 테두리 상자 */
 export type Loop = { segs: number[]; x0: number; x1: number; z0: number; z1: number };
 
-export type Ring2 = { y: number; x: number; z: number; rx: number; rz: number };
+/** 단면: 높이, 가운데, 반너비 둘 (팔은 축에 수직으로 잰 값), rr = 축에서 가장 먼 꼭짓점까지 (팔만) */
+export type Ring2 = { y: number; x: number; z: number; rx: number; rz: number; rr?: number };
 
 export type FormFit = {
   step: number;
@@ -52,77 +53,112 @@ export function sliceForm(F: FormMesh, step: number): Slice[] {
     const hi = Math.floor(Math.max(ya, yb, yc) / step);
     for (let k = Math.max(0, lo); k <= Math.min(n, hi); k++) buckets[k]!.push(t);
   }
-  const nv = P.length / 3;
   const out: Slice[] = [];
-  for (let k = 0; k <= n; k++) {
-    const y = k * step + 1e-4;
-    const seg: number[] = [];
-    const keys: number[] = [];
-    const sv: number[] = [];
-    for (const t of buckets[k]!) {
-      const pts: number[] = [];
-      const ek: number[] = [];
-      const ev: number[] = [];
-      for (let e = 0; e < 3; e++) {
-        const va = I[t + e]!;
-        const vb = I[t + ((e + 1) % 3)]!;
-        const a = va * 3;
-        const b = vb * 3;
-        const da = P[a + 1]! - y;
-        const db = P[b + 1]! - y;
-        if ((da < 0) !== (db < 0)) {
-          const f = da / (da - db);
-          pts.push(P[a]! + (P[b]! - P[a]!) * f, P[a + 2]! + (P[b + 2]! - P[a + 2]!) * f);
-          ek.push(Math.min(va, vb) * nv + Math.max(va, vb));
-          ev.push(va, vb);
-        }
-      }
-      if (pts.length === 4) {
-        seg.push(...pts);
-        keys.push(ek[0]!, ek[1]!);
-        sv.push(...ev);
-      }
-    }
-    // 끝점(모서리)을 공유하는 선분끼리 한 고리
-    const ns = seg.length / 4;
-    const parent = Int32Array.from({ length: ns }, (_, i) => i);
-    const root = (i: number): number => {
-      while (parent[i] !== i) {
-        parent[i] = parent[parent[i]!]!;
-        i = parent[i]!;
-      }
-      return i;
-    };
-    const owner = new Map<number, number>();
-    for (let i = 0; i < ns; i++) {
-      for (const key of [keys[i * 2]!, keys[i * 2 + 1]!]) {
-        const o = owner.get(key);
-        if (o === undefined) owner.set(key, i);
-        else parent[root(i)] = root(o);
-      }
-    }
-    const loopOf = new Map<number, number>();
-    const loops: Loop[] = [];
-    const loop = new Int32Array(ns);
-    for (let i = 0; i < ns; i++) {
-      const r = root(i);
-      let li = loopOf.get(r);
-      if (li === undefined) {
-        li = loops.length;
-        loopOf.set(r, li);
-        loops.push({ segs: [], x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity });
-      }
-      loop[i] = li;
-      const L = loops[li]!;
-      L.segs.push(i);
-      L.x0 = Math.min(L.x0, seg[i * 4]!, seg[i * 4 + 2]!);
-      L.x1 = Math.max(L.x1, seg[i * 4]!, seg[i * 4 + 2]!);
-      L.z0 = Math.min(L.z0, seg[i * 4 + 1]!, seg[i * 4 + 3]!);
-      L.z1 = Math.max(L.z1, seg[i * 4 + 1]!, seg[i * 4 + 3]!);
-    }
-    out.push({ y: k * step, seg: new Float32Array(seg), loop, loops, verts: new Int32Array(sv) });
-  }
+  for (let k = 0; k <= n; k++) out.push(cutSlice(F, buckets[k]!, k * step));
   return out;
+}
+
+/**
+ * 정한 높이들에서만 자름 (자세를 바꾼 모델의 어깨 높이처럼 일부만 다시 잴 때).
+ * ys는 오름차순
+ */
+export function sliceAt(F: FormMesh, ys: number[]): Slice[] {
+  const P = F.pos;
+  const I = F.index;
+  const buckets: number[][] = ys.map(() => []);
+  // y 이상인 첫 칸
+  const lower = (y: number) => {
+    let lo = 0;
+    let hi = ys.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (ys[mid]! < y) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  // (넉넉히 담고 실제로 걸치는지는 cutSlice가 봄 — 꼭짓점이 자르는 높이 바로 근처면 빠지지 않게)
+  for (let t = 0; t < I.length; t += 3) {
+    const ya = P[I[t]! * 3 + 1]!;
+    const yb = P[I[t + 1]! * 3 + 1]!;
+    const yc = P[I[t + 2]! * 3 + 1]!;
+    const hiY = Math.max(ya, yb, yc) + 0.01;
+    for (let k = lower(Math.min(ya, yb, yc) - 0.01); k < ys.length && ys[k]! <= hiY; k++) buckets[k]!.push(t);
+  }
+  return ys.map((y, k) => cutSlice(F, buckets[k]!, y));
+}
+
+/** 삼각형들(tris: 첫 꼭짓점 번호 ×3)을 높이 y(+0.0001)에서 잘라 고리로 묶음 */
+function cutSlice(F: FormMesh, tris: number[], y0: number): Slice {
+  const P = F.pos;
+  const I = F.index;
+  const nv = P.length / 3;
+  const y = y0 + 1e-4;
+  const seg: number[] = [];
+  const keys: number[] = [];
+  const sv: number[] = [];
+  for (const t of tris) {
+    const pts: number[] = [];
+    const ek: number[] = [];
+    const ev: number[] = [];
+    for (let e = 0; e < 3; e++) {
+      const va = I[t + e]!;
+      const vb = I[t + ((e + 1) % 3)]!;
+      const a = va * 3;
+      const b = vb * 3;
+      const da = P[a + 1]! - y;
+      const db = P[b + 1]! - y;
+      if ((da < 0) !== (db < 0)) {
+        const f = da / (da - db);
+        pts.push(P[a]! + (P[b]! - P[a]!) * f, P[a + 2]! + (P[b + 2]! - P[a + 2]!) * f);
+        ek.push(Math.min(va, vb) * nv + Math.max(va, vb));
+        ev.push(va, vb);
+      }
+    }
+    if (pts.length === 4) {
+      seg.push(...pts);
+      keys.push(ek[0]!, ek[1]!);
+      sv.push(...ev);
+    }
+  }
+  // 끝점(모서리)을 공유하는 선분끼리 한 고리
+  const ns = seg.length / 4;
+  const parent = Int32Array.from({ length: ns }, (_, i) => i);
+  const root = (i: number): number => {
+    while (parent[i] !== i) {
+      parent[i] = parent[parent[i]!]!;
+      i = parent[i]!;
+    }
+    return i;
+  };
+  const owner = new Map<number, number>();
+  for (let i = 0; i < ns; i++) {
+    for (const key of [keys[i * 2]!, keys[i * 2 + 1]!]) {
+      const o = owner.get(key);
+      if (o === undefined) owner.set(key, i);
+      else parent[root(i)] = root(o);
+    }
+  }
+  const loopOf = new Map<number, number>();
+  const loops: Loop[] = [];
+  const loop = new Int32Array(ns);
+  for (let i = 0; i < ns; i++) {
+    const r = root(i);
+    let li = loopOf.get(r);
+    if (li === undefined) {
+      li = loops.length;
+      loopOf.set(r, li);
+      loops.push({ segs: [], x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity });
+    }
+    loop[i] = li;
+    const L = loops[li]!;
+    L.segs.push(i);
+    L.x0 = Math.min(L.x0, seg[i * 4]!, seg[i * 4 + 2]!);
+    L.x1 = Math.max(L.x1, seg[i * 4]!, seg[i * 4 + 2]!);
+    L.z0 = Math.min(L.z0, seg[i * 4 + 1]!, seg[i * 4 + 3]!);
+    L.z1 = Math.max(L.z1, seg[i * 4 + 1]!, seg[i * 4 + 3]!);
+  }
+  return { y: y0, seg: new Float32Array(seg), loop, loops, verts: new Int32Array(sv) };
 }
 
 /**
@@ -354,6 +390,64 @@ export function fitForm(F: FormMesh, step = 0.5): FormFit {
       armLabel[j] = armLabel[i]!;
       queue.push(j);
     }
+  }
+  // 팔 단면 굵기를 꼭짓점으로 다시 잼: 이웃 단면 가운데로 잡은 팔 축에 수직인 두 방향(앞뒤, 그와 수직)으로
+  // 가장 먼 꼭짓점까지. 수평 단면의 테두리 상자는 비스듬한 팔에서 어긋나고, 천 부딪힘 관이 이보다 가늘면 살이 소매 밖으로 비침
+  const K = Math.round(3 / step);
+  for (const arm of arms) {
+    const R = arm.rings;
+    const at = new Map<number, number>();
+    R.forEach((r, i) => at.set(Math.round(r.y / step), i));
+    const frames = R.map((_, i) => {
+      const a = R[Math.max(0, i - K)]!;
+      const b = R[Math.min(R.length - 1, i + K)]!;
+      let d: [number, number, number] = [a.x - b.x, a.y - b.y, a.z - b.z];
+      const dl = Math.hypot(...d) || 1;
+      d = [d[0] / dl, d[1] / dl, d[2] / dl];
+      // 앞뒤 방향(z)에서 축 성분을 뺀 것, 그리고 축·앞뒤 둘 다에 수직인 것
+      let za: [number, number, number] = [-d[2] * d[0], -d[2] * d[1], 1 - d[2] * d[2]];
+      const zl = Math.hypot(...za) || 1;
+      za = [za[0] / zl, za[1] / zl, za[2] / zl];
+      const xa: [number, number, number] = [d[1] * za[2] - d[2] * za[1], d[2] * za[0] - d[0] * za[2], d[0] * za[1] - d[1] * za[0]];
+      return { d, xa, za };
+    });
+    const ex = new Float32Array(R.length);
+    const ez = new Float32Array(R.length);
+    const er = new Float32Array(R.length);
+    // 단면 가운데를 잇는 축을 따라 잰 자리 (겨드랑이 = 0, 손끝으로 갈수록 +)
+    const cum = [0];
+    for (let i = 1; i < R.length; i++) cum.push(cum[i - 1]! + Math.hypot(R[i]!.x - R[i - 1]!.x, R[i]!.y - R[i - 1]!.y, R[i]!.z - R[i - 1]!.z));
+    const nearest = (s: number) => {
+      let lo = 0;
+      let hi = R.length - 1;
+      while (hi - lo > 1) {
+        const m = (lo + hi) >> 1;
+        if (cum[m]! < s) lo = m;
+        else hi = m;
+      }
+      return Math.abs(cum[lo]! - s) <= Math.abs(cum[hi]! - s) ? lo : hi;
+    };
+    for (let v = 0; v < nv; v++) {
+      if (armLabel[v] !== arm.side) continue;
+      const i = at.get(Math.round(F.pos[v * 3 + 1]! / step));
+      if (i === undefined) continue;
+      const r = R[i]!;
+      const f = frames[i]!;
+      const rel = [F.pos[v * 3]! - r.x, F.pos[v * 3 + 1]! - r.y, F.pos[v * 3 + 2]! - r.z];
+      const px = rel[0]! * f.xa[0] + rel[1]! * f.xa[1] + rel[2]! * f.xa[2];
+      const pz = rel[0]! * f.za[0] + rel[1]! * f.za[1] + rel[2]! * f.za[2];
+      // 비스듬한 팔은 수평 단면의 꼭짓점이 축을 따라 위아래로 퍼져 있어서, 축을 따라 잰 자리의 단면에 넣음
+      const ax = rel[0]! * f.d[0] + rel[1]! * f.d[1] + rel[2]! * f.d[2];
+      const j = nearest(cum[i]! - ax);
+      ex[j] = Math.max(ex[j]!, Math.abs(px));
+      ez[j] = Math.max(ez[j]!, Math.abs(pz));
+      er[j] = Math.max(er[j]!, Math.hypot(px, pz));
+    }
+    R.forEach((r, i) => {
+      if (ex[i]! > 0) r.rx = ex[i]!;
+      if (ez[i]! > 0) r.rz = ez[i]!;
+      if (er[i]! > 0) r.rr = er[i]!;
+    });
   }
   return { step, slices, height, crotch, armpit, neckMid, neckBase: { y: nb, rx: nbA.w / 2, rz: nbA.d / 2 }, chin, arms, legs, armLabel };
 }

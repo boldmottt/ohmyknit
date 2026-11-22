@@ -3,7 +3,7 @@ import { smoothKeys } from './form';
 import { type Layout, type Ring, type SimRole, type Tube } from './shape';
 import type { ArtPiece } from '../closet/assembledArt';
 import { formFor, type FormMesh } from './formMesh';
-import { fitForm, outerLoops, radial, torsoLoop, type FormFit } from './formFit';
+import { fitForm, outerLoops, radial, sliceAt, torsoLoop, type FormFit } from './formFit';
 
 /**
  * 사람 모양 마네킹 (three.js 없이 숫자만 — 화면에 그릴 때도, 천 시뮬레이션의 부딪힘에도 같은 모양).
@@ -1373,6 +1373,13 @@ function formKit(kind: BodyKind): FormKit | null {
   return kit;
 }
 
+/**
+ * 팔 무게를 이웃끼리 고르게 펴는 높이 (겨드랑이 아래·위 cm, 1cm 여유 포함) — 몸통 꼭짓점은 이 안에서만 팔 자세를 따라 움직임
+ * (위쪽은 삼각근 무게가 0이 되는 어깨 관절 + 7.5cm = 겨드랑이 + 11cm보다 높게)
+ */
+const ARM_BAND_BELOW = 7;
+const ARM_BAND_ABOVE = 13;
+
 const smooth01 = (a: number, b: number, v: number) => {
   const t = Math.max(0, Math.min(1, (v - a) / (b - a)));
   return t * t * (3 - 2 * t);
@@ -1382,7 +1389,8 @@ function buildKit(F: FormMesh): FormKit {
   const fit = fitForm(F);
   const A = 144;
   const kOf = (y: number) => Math.max(0, Math.min(fit.slices.length - 1, Math.round(y / fit.step)));
-  // 몸통: 사타구니에서 턱 위까지, 가운데를 지나는 겉 고리만 (겨드랑이 아래 팔은 따로 떨어진 고리라 빠짐)
+  // 몸통: 사타구니에서 턱 위까지, 가운데를 지나는 겉 고리만 (겨드랑이 아래 팔은 따로 떨어진 고리라 빠짐).
+  // 겨드랑이 위 어깨 높이는 팔 윗머리까지 한 고리 — 팔 자세를 바꾸면 formBody가 그 높이를 다시 잼
   const torso: Loft = { y: [], cx: [], cz: [], A, r: [] };
   // (목 위쪽 끝은 턱 바로 아래까지 — 그 위는 머리 단면이 맡음)
   for (let k = kOf(fit.crotch); k <= kOf(fit.chin - 0.5); k++) {
@@ -1415,7 +1423,8 @@ function buildKit(F: FormMesh): FormKit {
     if (y >= fit.armpit - 12 && y <= fit.armpit) chest = Math.max(chest, loftGirth(torso, i));
   });
   // 팔 무게: 겨드랑이 아래는 팔 단면 고리의 꼭짓점이면 1 (손가락까지 통째로), 위로는 어깨 관절 바깥쪽으로 갈수록 1
-  // (삼각근이 팔을 따라감). 겨드랑이 주름에서 팔과 몸이 이어지는 곳은 무게를 이웃끼리 고르게 펴서 찢어지지 않게
+  // (삼각근이 팔을 따라감). 겨드랑이 주름에서 팔과 몸이 이어지는 곳은 몸 쪽 무게만 이웃끼리 고르게 펴서 찢어지지 않게
+  // (팔 꼭짓점은 1 그대로 — 팔이 통째로 돌아야 팔 관과 맞고, 반쯤 따라온 몸 쪽은 formBody가 몸통 단면으로 다시 잼)
   const nv = F.pos.length / 3;
   const armW = new Float32Array(nv);
   const foreW = new Float32Array(nv);
@@ -1445,7 +1454,7 @@ function buildKit(F: FormMesh): FormKit {
     const band: number[] = [];
     for (let i = 0; i < nv; i++) {
       const y = F.pos[i * 3 + 1]!;
-      if (y > fit.armpit - 6 && y < fit.armpit + 12) band.push(i);
+      if (y > fit.armpit - ARM_BAND_BELOW + 1 && y < fit.armpit + ARM_BAND_ABOVE - 1 && fit.armLabel[i] === 0) band.push(i);
     }
     for (let it = 0; it < 12; it++) {
       const next = band.map((i) => {
@@ -1747,10 +1756,20 @@ function formBody(kind: BodyKind, kit: FormKit, armpitY: number, sw: number, sh:
       const p = S([r.x, r.y, r.z]);
       return f ? f(p, 1, smooth01(arm.elbow[1] + 3, arm.elbow[1] - 3, r.y)) : p;
     });
+    // 겨드랑이 위로 어깨 관절까지 이어서 팔 윗머리(삼각근)도 감쌈 — 관절은 팔을 돌리는 중심이라 그대로
+    const top = rings[rings.length - 1]!;
+    const topR = Math.max(top.rx, top.rz, top.rr ?? 0) * 0.95;
+    pts.push(S(arm.shoulder));
     let acc = 0;
     const ringsT: Ring[] = pts.map((p, i) => {
       if (i > 0) acc += Math.hypot(...sub3(p, pts[i - 1]!));
-      return { t: acc, rx: rings[i]!.rx * sw, rz: rings[i]!.rz * sw };
+      const r = rings[Math.min(i, rings.length - 1)]!;
+      const rx = (i < rings.length ? r.rx : topR) * sw;
+      const rz = (i < rings.length ? r.rz : topR) * sw;
+      // 납작한 손(앞뒤로 넓음)은 관 세 줄로 감싸고, 나머지는 둥근 관이 축에서 가장 먼 꼭짓점까지 감싸게
+      if (rz - rx > 0.8) return { t: acc, rx, rz };
+      const rr = Math.max(rx, rz, (i < rings.length ? (r.rr ?? 0) : 0) * sw);
+      return { t: acc, rx: rr, rz: rr };
     });
     return { axis: pathAxis(pts, [0, 0, 1]), rings: ringsT };
   });
@@ -1765,6 +1784,35 @@ function formBody(kind: BodyKind, kit: FormKit, armpitY: number, sw: number, sh:
   });
   const floor = armpitY - fit.armpit * sh;
   const torso = scaleLoftXZ(kit.torso);
+  // 팔을 돌리면 어깨(삼각근)와 겨드랑이 언저리 몸통도 같이 움직여서, 그 높이의 몸통 단면은 자세를 바꾼 모델에서 다시 잼
+  // (처음 자세 단면을 그대로 쓰면 팔을 내린 뒤에도 원래 팔 자리가 남아 옷 어깨가 부풀고, 옮겨 간 삼각근은 옷을 뚫고 나옴).
+  // 쓰는 것: 가운데(x = 0)를 지나는 고리들과 그 너비 안의 작은 고리(겨드랑이 주름이 접혀 끊긴 조각)에서
+  // 겨드랑이 아래 팔 꼭짓점을 자른 선분만 뺀 것. 몸통과 떨어진 팔 고리는 통째로 뺌 (팔과 같이 내려온 삼각근 조각이
+  // 몸통 단면에 섞이면 겨드랑이 아래가 팔까지 부풀어서). 가운데(cz)는 처음 자세 그대로 둬서 위아래 단면과 이어지게
+  if (poses.size) {
+    const lo = armpitY - ARM_BAND_BELOW * sh;
+    const hi = armpitY + ARM_BAND_ABOVE * sh;
+    const rows = torso.y.flatMap((y, i) => (y >= lo && y <= hi ? [i] : []));
+    const posed = sliceAt({ pos, index: F.index }, rows.map((i) => torso.y[i]!));
+    rows.forEach((i, k) => {
+      const sl = posed[k]!;
+      const ls = outerLoops(sl);
+      const cross = ls.filter((l) => l.x0 <= 0.3 && l.x1 >= -0.3);
+      if (!cross.length) return;
+      const bx0 = Math.min(...cross.map((l) => l.x0)) - 1;
+      const bx1 = Math.max(...cross.map((l) => l.x1)) + 1;
+      const keep: number[] = [];
+      for (const l of ls) {
+        if (!cross.includes(l) && (l.x0 < bx0 || l.x1 > bx1)) continue;
+        for (const q of l.segs) {
+          let arm = 0;
+          for (let e = 0; e < 4; e++) if (fit.armLabel[sl.verts[q * 4 + e]!] !== 0) arm++;
+          if (arm <= 2) keep.push(q);
+        }
+      }
+      if (keep.length >= 8) torso.r.splice(i * torso.A, torso.A, ...radial(sl, keep, 0, torso.cz[i]!, torso.A));
+    });
+  }
   return {
     kind,
     torso,
