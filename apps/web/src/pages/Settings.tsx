@@ -105,11 +105,25 @@ export default function Settings() {
       <section className="card" style={{ marginTop: 16 }}>
         <h2 className="serif">만든 사람들</h2>
         <p className="small muted">
-          여자 마네킹 3D 모델(맥에 받아 둔 경우): “Free Female Mannequin Base Mesh” — Devlane (
+          마네킹 3D 모델(맥에 받아 둔 경우), 둘 다 천을 씌운 질감·박음선을 더하고 크기·자세를 맞춰 썼어요.
+        </p>
+        <p className="small muted">
+          여자: “Free Female Mannequin Base Mesh” — Devlane (
           <a href="https://sketchfab.com/3d-models/free-female-mannequin-base-mesh-187300a221c04178b96b84bf9cab97e0" target="_blank" rel="noreferrer">
             Sketchfab
           </a>
-          , Sketchfab Standard 라이선스). 천을 씌운 질감·박음선을 더하고 가슴을 매끈하게 다듬어 썼어요.
+          , Sketchfab Standard 라이선스). 가슴을 매끈하게 다듬음.
+        </p>
+        <p className="small muted">
+          남자: “Proxy Human base Mesh” — sphere_joe (
+          <a href="https://sketchfab.com/3d-models/proxy-human-base-mesh-9fea713a3eec47d7a7f9a3364d08f22e" target="_blank" rel="noreferrer">
+            Sketchfab
+          </a>
+          ,{' '}
+          <a href="http://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">
+            CC BY 4.0
+          </a>
+          ). 팔을 몸 옆으로 내린 자세로 바꿈.
         </p>
       </section>
     </div>

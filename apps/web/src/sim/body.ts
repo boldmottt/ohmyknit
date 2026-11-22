@@ -2,7 +2,7 @@ import { axisSheet, ringAt, type Axis, type Sheet, type Vec3 } from './drape';
 import { smoothKeys } from './form';
 import { type Layout, type Ring, type SimRole, type Tube } from './shape';
 import type { ArtPiece } from '../closet/assembledArt';
-import { femaleForm, type FormMesh } from './formMesh';
+import { formFor, type FormMesh } from './formMesh';
 import { fitForm, outerLoops, radial, torsoLoop, type FormFit } from './formFit';
 
 /**
@@ -1330,7 +1330,7 @@ function seamsFor(spec: Spec, torso: Loft, arms: Limb[], armTops: number[], armS
   return out;
 }
 
-/* ───────── 3D 모델 마네킹 (여자: 무료 공개 모델) ───────── */
+/* ───────── 3D 모델 마네킹 (여자·남자: 무료 공개 모델, pnpm form:fetch로 받아 둔 경우) ───────── */
 
 /**
  * 모델 하나를 몸으로 쓰는 준비물 (종류마다 한 번): 높이마다 자른 몸통·머리 단면(모델 좌표),
@@ -1354,7 +1354,7 @@ const kits = new Map<BodyKind, FormKit | null>();
  * 모델 파일을 나중에 받거나 바꾸면 예전 몸에 맞춘 결과를 쓰지 않고 다시 계산하게
  */
 export function bodySignature(kind: BodyKind): string {
-  const F = kind === 'female' ? femaleForm() : null;
+  const F = formFor(kind);
   return F ? `form${F.pos.length / 3}` : 'calc';
 }
 
@@ -1367,7 +1367,7 @@ export function sleeveOffsetZ(kind: BodyKind): number {
 }
 function formKit(kind: BodyKind): FormKit | null {
   if (kits.has(kind)) return kits.get(kind)!;
-  const F = kind === 'female' ? femaleForm() : null;
+  const F = formFor(kind);
   const kit = F ? buildKit(F) : null;
   kits.set(kind, kit);
   return kit;
@@ -1395,9 +1395,9 @@ function buildKit(F: FormMesh): FormKit {
     torso.cz.push(cz);
     torso.r.push(...radial(sl, t.segs, 0, cz, A));
   }
-  // 머리: 턱 아래부터 정수리까지 겉 고리 전부
+  // 머리: 턱 끝 조금 아래부터 정수리까지 겉 고리 전부 (계산으로 만든 머리처럼 턱 끝 0.8cm 아래에서 시작)
   const head: Loft = { y: [], cx: [], cz: [], A, r: [] };
-  for (let k = kOf(fit.chin - 1.5); k < fit.slices.length; k++) {
+  for (let k = kOf(fit.chin - 0.8); k < fit.slices.length; k++) {
     const sl = fit.slices[k]!;
     const ls = outerLoops(sl);
     if (!ls.length) continue;
@@ -1478,25 +1478,27 @@ function rotFromTo(a: Vec3, b: Vec3): M3 {
 }
 const apply = (m: M3, v: Vec3): Vec3 => [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
 
-/** 축을 위(tTop)에서 내려가며 점 c에서 거리 len인 곳 (모자라면 축을 이어 늘림) */
-function pointAtDistance(axis: Axis, tTop: number, c: Vec3, len: number): Vec3 {
-  let lo = tTop;
-  let hi = tTop;
-  for (let t = tTop; t > tTop - 400; t -= 0.5) {
-    const d = Math.hypot(...sub3(axis.at(t).p, c));
-    if (d >= len) {
-      lo = t;
-      break;
-    }
+/**
+ * 축을 tStart에서 아래(소맷부리 쪽)로 내려가며 점 c에서 처음으로 거리 len이 되는 자리 (모자라면 축을 이어 늘림).
+ * 팔꿈치는 소매 윗단에서, 손목은 그 팔꿈치 자리에서부터 찾아야 아래팔이 거꾸로 접히지 않아요
+ */
+function pointAtDistance(axis: Axis, tStart: number, c: Vec3, len: number): { p: Vec3; t: number } {
+  const dist = (t: number) => Math.hypot(...sub3(axis.at(t).p, c));
+  let hi = tStart;
+  let lo = tStart;
+  for (let t = tStart; t > tStart - 400; t -= 0.5) {
+    lo = t;
+    if (dist(t) >= len) break;
     hi = t;
-    lo = t - 0.5;
   }
+  // hi: 아직 len보다 가까운 마지막 자리, lo: 처음으로 len 넘은 자리
   for (let k = 0; k < 30; k++) {
     const m = (lo + hi) / 2;
-    if (Math.hypot(...sub3(axis.at(m).p, c)) >= len) lo = m;
+    if (dist(m) >= len) lo = m;
     else hi = m;
   }
-  return axis.at((lo + hi) / 2).p;
+  const t = (lo + hi) / 2;
+  return { p: axis.at(t).p, t };
 }
 
 /** 3D 모델 머리의 모자 둘레 (턱 끝에서 머리 높이의 62~80% 사이 가장 굵은 곳 = 귀 위 이마~뒤통수) */
@@ -1667,6 +1669,11 @@ function formSeams(kit: FormKit, torso: Loft, armpitY: number, sh: number): Vec3
   return out;
 }
 
+/** 팔을 내린 편한 자세 (여자 마네킹 모델의 자세에 맞춤): 위팔·아래팔이 세로에서 바깥으로 기운 각도, 아래팔이 앞으로 나온 정도 */
+const REST_UPPER = (12 * Math.PI) / 180;
+const REST_FORE = (16 * Math.PI) / 180;
+const REST_FORE_FWD = 0.2;
+
 /**
  * 3D 모델 몸: 옷 크기에 맞춰 늘이고(가로 sw, 세로 sh, 겨드랑이 기준), 소매가 있으면 팔을 소매 축을 따라
  * 어깨·팔꿈치에서 돌림(꼭짓점마다 무게만큼 섞음). 부딪힘용 몸통·머리 단면과 팔·다리 관도 같이.
@@ -1682,18 +1689,12 @@ function formBody(kind: BodyKind, kit: FormKit, armpitY: number, sw: number, sh:
     pos[i * 3 + 1] = q[1];
     pos[i * 3 + 2] = q[2];
   }
-  // 팔마다 자세: 어깨 관절 J는 그대로, 팔꿈치 E와 손목 W를 소매 축 위로
+  // 팔마다 자세: 어깨 관절 J는 그대로, 팔꿈치 E와 손목 W를 목표 자리 E2·W2로 (위팔은 J에서, 아래팔은 E에서 돌림)
   const poses = new Map<number, (p: Vec3, w: number, wf: number) => Vec3>();
-  for (const sl of sleeves) {
-    const arm = fit.arms.find((a) => a.side === sl.side)!;
-    const J = S(arm.shoulder);
-    const E = S(arm.elbow);
-    const W = S(arm.wrist);
-    const E2 = pointAtDistance(sl.axis, sl.tTop, J, Math.hypot(...sub3(E, J)));
-    const W2 = pointAtDistance(sl.axis, sl.tTop, E2, Math.hypot(...sub3(W, E)));
+  const setPose = (side: number, J: Vec3, E: Vec3, W: Vec3, E2: Vec3, W2: Vec3) => {
     const Rs = rotFromTo(sub3(E, J), sub3(E2, J));
     const Re = rotFromTo(apply(Rs, sub3(W, E)), sub3(W2, E2));
-    poses.set(sl.side, (p, w, wf) => {
+    poses.set(side, (p, w, wf) => {
       const up = apply(Rs, sub3(p, J));
       const ts: Vec3 = [J[0] + up[0], J[1] + up[1], J[2] + up[2]];
       const fe = apply(Re, apply(Rs, sub3(p, E)));
@@ -1701,6 +1702,29 @@ function formBody(kind: BodyKind, kit: FormKit, armpitY: number, sw: number, sh:
       const g: Vec3 = [ts[0] + (tf[0] - ts[0]) * wf, ts[1] + (tf[1] - ts[1]) * wf, ts[2] + (tf[2] - ts[2]) * wf];
       return [p[0] + (g[0] - p[0]) * w, p[1] + (g[1] - p[1]) * w, p[2] + (g[2] - p[2]) * w];
     });
+  };
+  // 옷을 입히면 소매 축 위로
+  for (const sl of sleeves) {
+    const arm = fit.arms.find((a) => a.side === sl.side)!;
+    const J = S(arm.shoulder);
+    const E = S(arm.elbow);
+    const W = S(arm.wrist);
+    // 팔꿈치는 어깨 관절에서 위팔 길이만큼 소매 축 위, 손목은 거기서 아래팔 길이만큼 더 아래
+    const e2 = pointAtDistance(sl.axis, sl.tTop, J, Math.hypot(...sub3(E, J)));
+    const w2 = pointAtDistance(sl.axis, e2.t, e2.p, Math.hypot(...sub3(W, E)));
+    setPose(sl.side, J, E, W, e2.p, w2.p);
+  }
+  // 소매가 없는 팔: 모델이 팔을 넓게 벌리고 있으면(위팔이 세로에서 25° 넘게) 여자 마네킹처럼 몸 옆으로 편하게 내림
+  for (const arm of fit.arms) {
+    if (poses.has(arm.side)) continue;
+    const J = S(arm.shoulder);
+    const E = S(arm.elbow);
+    const W = S(arm.wrist);
+    const up = sub3(E, J);
+    if (Math.atan2(Math.abs(up[0]), -up[1]) < (25 * Math.PI) / 180) continue;
+    const E2 = along(J, norm3([arm.side * Math.sin(REST_UPPER), -Math.cos(REST_UPPER), 0.05]), Math.hypot(...up));
+    const W2 = along(E2, norm3([arm.side * Math.sin(REST_FORE), -Math.cos(REST_FORE), REST_FORE_FWD]), Math.hypot(...sub3(W, E)));
+    setPose(arm.side, J, E, W, E2, W2);
   }
   if (poses.size) {
     for (let i = 0; i < nv; i++) {

@@ -1,18 +1,21 @@
 // 마네킹 3D 모델(GLB) → 앱에 넣는 작은 바이너리 (src/sim/assets/*.bin)
 //
-//   node scripts/form-mesh.mjs <입력.glb> <출력.bin> [키 cm]
+//   node scripts/form-mesh.mjs <입력.glb> <출력.bin> [키 cm] [--shell] [--smooth-chest]
 //
 // - 노드 변환을 적용해 cm 단위, 발바닥 y = 0, 가운데 x = z = 0, 키를 맞춤
 // - 같은 자리 꼭짓점을 하나로 (UV 이음 때문에 갈라진 것) — 법선은 앱에서 다시 계산
-// - 매장 마네킹처럼 가슴 꼭지를 매끈하게 (가장 앞으로 나온 점 둘레를 부드럽게 폄)
+// - --shell: 두께 있는 껍데기 모델이면 겉면 안쪽의 속면을 뺌
+// - --smooth-chest: 매장 마네킹처럼 가슴 꼭지를 없앰 (꼭지 둘레 가슴 면에 맞춘 공 위로)
 // - 위치는 0.01cm 단위 16비트 정수, 삼각형 번호는 차이값 가변 길이로 압축
 //
 // 외부 패키지 없이 Node만으로 돌아가요.
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const [, , inPath, outPath, heightArg] = process.argv;
+const args = process.argv.slice(2);
+const flags = new Set(args.filter((a) => a.startsWith('--')));
+const [inPath, outPath, heightArg] = args.filter((a) => !a.startsWith('--'));
 if (!inPath || !outPath) {
-  console.error('usage: node scripts/form-mesh.mjs <in.glb> <out.bin> [heightCm]');
+  console.error('usage: node scripts/form-mesh.mjs <in.glb> <out.bin> [heightCm] [--shell] [--smooth-chest]');
   process.exit(1);
 }
 const HEIGHT = Number(heightArg ?? 178);
@@ -93,11 +96,11 @@ for (let t = 0; t < I0.length; t += 3) {
   if (a !== b && b !== c && a !== c) tris.push([a, b, c]);
 }
 
-/* ── 겉면만 남기기 ──
+/* ── 겉면만 남기기 (--shell) ──
  * 두께를 준 껍데기 모델이라 겉면 안쪽 0.3~0.4cm에 나란한 속면이 있고, 둘이 매끈하게 이어져 있어요.
  * 0.25cm 격자에 면을 찍어 벽을 세우고 바깥에서 공기를 채운 뒤, 면 바로 바깥(법선 쪽)이 바깥 공기인 삼각형만 남겨요.
  */
-{
+if (flags.has('--shell')) {
   let lo = [Infinity, Infinity, Infinity];
   let hi = [-Infinity, -Infinity, -Infinity];
   for (const p of pos) for (let k = 0; k < 3; k++) (lo[k] = Math.min(lo[k], p[k])), (hi[k] = Math.max(hi[k], p[k]));
@@ -367,7 +370,7 @@ function flattenNipple(tip) {
   }
   return { rho, moved };
 }
-for (const side of [-1, 1]) {
+for (const side of flags.has('--smooth-chest') ? [-1, 1] : []) {
   // 가슴 높이(키의 68~78%)에서 가장 앞으로 나온 점
   let best = -1;
   for (let i = 0; i < nv; i++) {

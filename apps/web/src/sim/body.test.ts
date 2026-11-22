@@ -5,15 +5,14 @@ import { BODY_KINDS, emptyBody, loftGirth, loftReach, specHeadGirth, type BodyKi
 import { readBody, writeBody } from './bodyPref';
 import { separate, type ClothPanel } from './cloth';
 import { bodyColliders, bodyOfDraped, drapeFor } from './drapeSim';
-import { femaleForm } from './formMesh';
+import { formFor } from './formMesh';
 
 /**
- * 여자 마네킹 3D 모델 파일(pnpm form:fetch로 받음)이 있으면 여자는 그 모델, 없으면 계산으로 만든 몸.
- * 모델 파일은 라이선스상 저장소에 없어서, 받아 두지 않은 곳에서는 3D 모델 테스트를 건너뜀
+ * 마네킹 3D 모델 파일(pnpm form:fetch로 받음)이 있는 몸은 그 모델, 없으면 계산으로 만든 몸.
+ * 모델 파일은 라이선스상 저장소에 없어서, 받아 두지 않은 곳에서는 3D 모델 테스트를 건너뛰고
+ * 계산으로 만든 몸의 테스트(손가락·허벅지 관)를 돌려요
  */
-const HAS_FORM = femaleForm() !== null;
-/** 계산으로 만든 몸 (손가락·허벅지 관 같은 부분 테스트) */
-const COMPUTED: BodyKind[] = HAS_FORM ? ['male'] : BODY_KINDS;
+const HAS: Record<BodyKind, boolean> = { female: formFor('female') !== null, male: formFor('male') !== null };
 
 /** 높이 y에 가장 가까운 단면의 둘레 */
 function girthAt(L: Loft, y: number): number {
@@ -82,7 +81,7 @@ describe('사람 모양 마네킹', () => {
   it('여자 몸: 허리가 가슴·엉덩이보다 가늘고, 치수가 실제 사람 비율', () => {
     const b = emptyBody('female');
     // 모델 파일을 받아 뒀으면 여자는 그 3D 모델 (천을 씌운 드레스폼처럼 그림)
-    expect(!!b.form).toBe(HAS_FORM);
+    expect(!!b.form).toBe(HAS.female);
     const L = b.torso!;
     const bust = maxGirth(L, ARMPIT - 12, ARMPIT);
     const [waist] = minGirth(L, ARMPIT - 30, ARMPIT - 8);
@@ -104,7 +103,8 @@ describe('사람 모양 마네킹', () => {
     expect(girthAt(m, ARMPIT - 7)).toBeGreaterThan(girthAt(m, ARMPIT - 45));
     expect(girthAt(m, ARMPIT - 7)).toBeGreaterThan(girthAt(f, ARMPIT - 7));
     expect(shoulderHalf(mb, ARMPIT)).toBeGreaterThan(shoulderHalf(fb, ARMPIT) + 1);
-    expect(girthAt(m, mb.neck.y + 2.5)).toBeLessThan(40);
+    // 목은 가슴보다 훨씬 가늘게 (3D 모델은 목이 짧고 굵은 남자 몸)
+    expect(girthAt(m, mb.neck.y + 2.5)).toBeLessThan(HAS.male ? 46 : 40);
   });
 
   it.each(BODY_KINDS)('머리와 목 (%s): 목은 턱 끝보다 뒤에서 올라가 턱 밑이 드러나고, 뒤통수가 목덜미 위로 나옴', (kind) => {
@@ -118,15 +118,16 @@ describe('사람 모양 마네킹', () => {
     const neckTop = T.y[T.y.length - 1]! - 0.5;
     // 턱 끝 바로 위: 목 앞면(목젖 쪽)이 턱 앞면보다 3cm 넘게 뒤 (예전엔 목이 턱 앞까지 나와 턱과 붙어 보였음)
     expect(front(H, chin + 2.2) - front(T, Math.min(chin + 2.2, neckTop))).toBeGreaterThan(3);
-    // 뒤통수(턱 끝 위 10cm)가 목덜미보다 1.5cm 넘게 뒤로
-    expect(back(H, chin + 10)).toBeLessThan(back(T, Math.min(chin + 4, neckTop)) - 1.5);
-    // 머리 높이(턱 끝 ~ 정수리)는 사람 비율 (여자 22.5, 남자 23.5 근처)
+    // 뒤통수(턱 끝 위 6~16cm에서 가장 뒤)가 목덜미보다 1.5cm 넘게 뒤로
+    const occiput = Math.min(...[6, 8, 10, 12, 14, 16].map((d) => back(H, chin + d)));
+    expect(occiput).toBeLessThan(back(T, Math.min(chin + 4, neckTop)) - 1.5);
+    // 머리 높이(턱 끝 ~ 정수리)는 사람 비율 (여자 22.5, 남자 24.5 근처)
     const height = b.top - chin;
     expect(height).toBeGreaterThan(21);
-    expect(height).toBeLessThan(25);
-    // 머리 둘레도 사람 크기
+    expect(height).toBeLessThan(26);
+    // 머리 둘레도 사람 크기 (남자 3D 모델은 머리가 조금 커서 63cm 남짓 — 모자 받침은 모자 둘레에 맞춰 줄여 씀)
     expect(specHeadGirth(kind)).toBeGreaterThan(52);
-    expect(specHeadGirth(kind)).toBeLessThan(59);
+    expect(specHeadGirth(kind)).toBeLessThan(kind === 'male' && HAS.male ? 64 : 59);
   });
 
   it.each(BODY_KINDS)('옷에 맞춘 몸 (%s): 가슴둘레가 옷보다 조금 작음 (보통 여유)', (kind) => {
@@ -144,17 +145,18 @@ describe('사람 모양 마네킹', () => {
     expect(body.hands.length).toBe(body.form ? 0 : 4);
   });
 
-  it.runIf(HAS_FORM)('옷 입힌 여자 3D 모델: 팔이 소매 축을 따라 어깨·팔꿈치에서 돌아감', () => {
-    const { D, body } = sweater('female');
+  for (const kind of BODY_KINDS) it.runIf(HAS[kind])(`옷 입힌 3D 모델 (${kind}): 팔이 소매 축을 따라 어깨·팔꿈치에서 돌아감`, () => {
+    const { D, body } = sweater(kind);
     expect(body.form).toBeTruthy();
     for (const role of ['sleeveL', 'sleeveR'] as const) {
       const sleeve = [...D.layout.roles].find(([, r]) => r === role)![0];
       const axis = D.axes.get(sleeve)!;
       const len = D.tubes.get(sleeve)!.length;
       const arm = body.arms.find((a) => Math.sign(a.axis.at(a.rings[0]!.t).p[0]) === (role === 'sleeveL' ? -1 : 1))!;
-      // 손목 자리 (손끝에서 15cm 위)가 소매 축에서 4cm 안
+      // 손목 (손끝에서 10~30cm 사이 가장 가는 단면)이 소매 축에서 4cm 안
       const t0 = arm.rings[0]!.t;
-      const wrist = arm.axis.at(t0 + 15).p;
+      const wr = arm.rings.filter((r) => r.t > t0 + 10 && r.t < t0 + 30).reduce((a, r) => (r.rx * r.rz < a.rx * a.rz ? r : a));
+      const wrist = arm.axis.at(wr.t).p;
       let d = Infinity;
       for (let t = -20; t <= len; t += 0.5) {
         const q = axis.at(t).p;
@@ -164,20 +166,23 @@ describe('사람 모양 마네킹', () => {
     }
   });
 
-  it.runIf(HAS_FORM)('손 (여자 3D 모델): 팔이 손끝까지, 손은 납작', () => {
-    const b = emptyBody('female');
+  for (const kind of BODY_KINDS) it.runIf(HAS[kind])(`손 (${kind} 3D 모델): 팔이 손끝까지, 몸 옆에 내려옴`, () => {
+    const b = emptyBody(kind);
     for (const a of b.arms) {
       const tip = a.axis.at(a.rings[0]!.t).p;
       const top = a.axis.at(a.rings[a.rings.length - 1]!.t).p;
-      // 겨드랑이에서 손끝까지 55cm 넘게 (손끝이 허벅지 중간)
+      // 겨드랑이에서 손끝까지 50cm 넘게 (손끝이 허벅지 중간), 팔은 몸 옆에 내려와 있음 (빈 마네킹)
       expect(top[1] - tip[1]).toBeGreaterThan(50);
-      // 손 자리 단면은 앞뒤로 넓고 옆으로 납작
-      const hand = a.rings.find((r) => a.axis.at(r.t).p[1] < tip[1] + 8)!;
-      expect(hand.rz).toBeGreaterThan(hand.rx * 1.5);
+      expect(Math.abs(tip[0])).toBeLessThan(40);
+      // 손바닥 자리(손끝에서 3~10cm 위)는 손 크기 (반너비 2~7cm, 손가락을 벌린 손이면 둘 다 넓음)
+      const palm = a.rings.filter((r) => r.t > a.rings[0]!.t + 3 && r.t < a.rings[0]!.t + 10).reduce((m, r) => (Math.max(r.rx, r.rz) > Math.max(m.rx, m.rz) ? r : m));
+      expect(Math.max(palm.rx, palm.rz)).toBeGreaterThan(2);
+      expect(Math.max(palm.rx, palm.rz)).toBeLessThan(7);
+      expect(Math.min(palm.rx, palm.rz)).toBeGreaterThan(0.8);
     }
   });
 
-  it.each(COMPUTED)('손 (%s): 납작한 손바닥, 엄지, 따로 떨어진 손가락 넷이 손바닥 아래로', (kind) => {
+  for (const kind of BODY_KINDS) it.runIf(!HAS[kind])(`손 (${kind}): 납작한 손바닥, 엄지, 따로 떨어진 손가락 넷이 손바닥 아래로`, () => {
     const b = emptyBody(kind);
     const palms = b.hands.filter((h) => (h.n ?? 2) > 2);
     const thumbs = b.hands.filter((h) => (h.n ?? 2) === 2);
@@ -228,7 +233,7 @@ describe('사람 모양 마네킹', () => {
     expect(b.seams.length).toBeGreaterThan(6);
   });
 
-  it.each(COMPUTED)('허벅지 (%s): 윗끝이 엉덩이 옆으로 삐져나오지 않음', (kind) => {
+  for (const kind of BODY_KINDS) it.runIf(!HAS[kind])(`허벅지 (${kind}): 윗끝이 엉덩이 옆으로 삐져나오지 않음`, () => {
     const b = emptyBody(kind);
     const L = b.torso!;
     for (const th of b.limbs) {

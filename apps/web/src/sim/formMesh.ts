@@ -1,9 +1,9 @@
 /**
- * 모델 파일은 저장소에 올리지 않아요: 원본 라이선스(Sketchfab Standard)가 파일 자체의 재배포를 막아서
- * 각자 `pnpm form:fetch`로 받아 둠 (scripts/form-fetch.mjs). 파일이 없으면 빈 목록 → 계산으로 만든 마네킹
+ * 모델 파일(form-female.bin, form-male.bin)은 저장소에 올리지 않아요: 여자 원본 라이선스(Sketchfab Standard)가
+ * 파일 자체의 재배포를 막아서, 둘 다 각자 `pnpm form:fetch`로 받아 둠 (scripts/form-fetch.mjs).
+ * 파일이 없으면 빈 목록 → 그 몸은 계산으로 만든 마네킹
  */
 const files = import.meta.glob<string>('./assets/form-*.bin', { query: '?inline', import: 'default', eager: true });
-const femaleData = files['./assets/form-female.bin'];
 
 /**
  * 마네킹 3D 모델 (scripts/form-mesh.mjs로 만든 바이너리): cm 단위, 발바닥 y = 0, 가운데 x = z = 0.
@@ -46,24 +46,29 @@ export function decodeForm(u8: Uint8Array): FormMesh {
   return { pos, index };
 }
 
-let female: FormMesh | null | undefined;
-let given: Uint8Array | null = null;
+/** 'female' | 'male' (body.ts를 가져오면 서로 물려서 이름만) */
+type Kind = string;
+const cache = new Map<Kind, FormMesh | null>();
+const given = new Map<Kind, Uint8Array>();
 
 /** 테스트(Node)에서는 파일을 직접 읽어 넘겨요 (브라우저에서는 JS에 들어 있는 데이터를 씀) */
-export function setFemaleFormBytes(u8: Uint8Array) {
-  given = u8;
-  female = undefined;
+export function setFormBytes(kind: Kind, u8: Uint8Array) {
+  given.set(kind, u8);
+  cache.delete(kind);
 }
 
-/** 여자 마네킹 모델 (못 읽으면 null → 계산으로 만든 몸) */
-export function femaleForm(): FormMesh | null {
-  if (female === undefined) {
+/** 그 몸의 마네킹 3D 모델 (파일이 없거나 못 읽으면 null → 계산으로 만든 몸) */
+export function formFor(kind: Kind): FormMesh | null {
+  if (!cache.has(kind)) {
+    let f: FormMesh | null = null;
     try {
-      const src = given ?? (typeof femaleData === 'string' && femaleData.startsWith('data:') ? bytesOf(femaleData) : null);
-      female = src ? decodeForm(src) : null;
+      const data = files[`./assets/form-${kind}.bin`];
+      const src = given.get(kind) ?? (typeof data === 'string' && data.startsWith('data:') ? bytesOf(data) : null);
+      f = src ? decodeForm(src) : null;
     } catch {
-      female = null;
+      f = null;
     }
+    cache.set(kind, f);
   }
-  return female;
+  return cache.get(kind)!;
 }

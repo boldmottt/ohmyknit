@@ -190,7 +190,9 @@ export const torsoLoop = (ls: Loop[]) => ls.filter((l) => l.x0 <= 0.3 && l.x1 >=
 /** 모델에서 사타구니·겨드랑이·목·턱·팔·다리를 찾음 */
 export function fitForm(F: FormMesh, step = 0.5): FormFit {
   const slices = sliceForm(F, step);
-  const height = slices[slices.length - 1]!.y;
+  // 키 = 가장 높은 꼭짓점 (마지막 단면은 정수리 위 빈 자리일 수 있음)
+  let height = 0;
+  for (let i = 1; i < F.pos.length; i += 3) height = Math.max(height, F.pos[i]!);
   const outer = slices.map(outerLoops);
   const kOf = (y: number) => Math.max(0, Math.min(slices.length - 1, Math.round(y / step)));
   // 사타구니: 아래에서 올라가며 가운데(x = 0)를 지나는 고리가 처음 생기는 높이
@@ -216,19 +218,33 @@ export function fitForm(F: FormMesh, step = 0.5): FormFit {
       if (!ahead) break;
     }
   }
-  // 다리: 사타구니 아래, 가운데에 가장 가까운 고리
+  // 가운데(x = 0)를 지나는 고리는 팔·다리가 아님 (몸통, 사타구니 아래 매달린 부분)
+  const offCenter = (l: Loop) => !(l.x0 <= 0.3 && l.x1 >= -0.3);
+  type Box = { x0: number; x1: number; z0: number; z1: number };
+  const near = (l: Loop, b: Box, pad: number) => l.x1 >= b.x0 - pad && l.x0 <= b.x1 + pad && l.z1 >= b.z0 - pad && l.z0 <= b.z1 + pad;
+  const area = (l: Box) => (l.x1 - l.x0) * (l.z1 - l.z0);
+  // 다리: 사타구니 바로 아래 그쪽의 가장 큰 고리(허벅지)에서 시작해, 아래로 바로 위 단면 옆에 있는 가장 큰 고리를 따라감
+  // (사타구니에 매달린 작은 덩어리나 손을 다리로 잡지 않게)
   const legs: FormFit['legs'] = [];
+  const legLoop = new Map<string, Loop>();
   for (const side of [1, -1] as const) {
     const rings: Ring2[] = [];
+    let prev: Box | null = null;
     for (let k = kOf(crotch) - 1; k >= 1; k--) {
-      const ls = outer[k]!.filter((l) => Math.sign(l.x0 + l.x1) === side);
-      const leg = ls.reduce<Loop | null>((a, b) => (!a || Math.abs(b.x0 + b.x1) < Math.abs(a.x0 + a.x1) ? b : a), null);
-      if (leg) rings.push(ringOfLoop(slices[k]!.y, leg));
+      const ls = outer[k]!.filter((l) => offCenter(l) && Math.sign(l.x0 + l.x1) === side && (!prev || near(l, prev, 2)));
+      const leg = ls.reduce<Loop | null>((a, b) => (!a || area(b) > area(a) ? b : a), null);
+      if (!leg) {
+        if (prev) break;
+        continue;
+      }
+      rings.push(ringOfLoop(slices[k]!.y, leg));
+      legLoop.set(`${side}:${k}`, leg);
+      prev = leg;
     }
     legs.push({ side, rings });
   }
-  const legAt = (side: 1 | -1, y: number) => legs.find((l) => l.side === side)!.rings.find((r) => Math.abs(r.y - y) < step / 2);
-  // 팔: 겨드랑이 아래로 몸통(사타구니 아래로는 다리) 바깥 고리들을 합친 것, 손끝까지.
+  // 팔: 겨드랑이 아래로 몸통 바깥 고리들(손가락까지 합침)을 손끝까지. 바로 위 단면 옆에 있는 고리만 따라가서
+  // 사타구니·다리 쪽 덩어리를 팔로 잡지 않게 (사타구니 아래로는 그 높이의 다리 고리도 뺌).
   // 그 고리를 이루는 모서리의 꼭짓점은 팔, 겨드랑이 아래 나머지 고리의 꼭짓점은 몸으로 표시
   const nv = F.pos.length / 3;
   const armLabel = new Int8Array(nv);
@@ -240,21 +256,31 @@ export function fitForm(F: FormMesh, step = 0.5): FormFit {
   const arms: FormFit['arms'] = [];
   for (const side of [1, -1] as const) {
     const rings: Ring2[] = [];
+    let prev: Box | null = null;
     for (let k = kOf(armpit); k >= 1; k--) {
       const y = slices[k]!.y;
-      let ls = sideLoops(k, side);
-      if (y < crotch) {
-        const leg = legAt(side, y);
-        ls = ls.filter((l) => !leg || Math.abs((l.x0 + l.x1) / 2) > Math.abs(leg.x) + leg.rx * 0.5);
-      }
+      const leg = legLoop.get(`${side}:${k}`);
+      const ls = sideLoops(k, side).filter((l) => offCenter(l) && l !== leg && (!prev || near(l, prev, 2.5)));
       if (!ls.length) {
         if (rings.length > 20) break;
         continue;
       }
-      rings.push(ringOfLoop(y, union(ls)));
+      const u = union(ls);
+      rings.push(ringOfLoop(y, u));
+      prev = u;
       const sl = slices[k]!;
       for (const l of ls) for (const si of l.segs) for (let e = 0; e < 4; e++) armLabel[sl.verts[si * 4 + e]!] = side;
     }
+    // 비스듬한 팔(넓게 벌린 A자세)은 수평 단면이 팔 방향으로 늘어나 보여서, 이웃 단면 가운데로 잰 기울기만큼 줄임
+    // (팔에 수직인 굵기 → 천 부딪힘 관이 실제 팔 굵기)
+    const K = Math.round(3 / step);
+    const tilted = rings.map((r, i) => {
+      const a = rings[Math.max(0, i - K)]!;
+      const b = rings[Math.min(rings.length - 1, i + K)]!;
+      const dy = Math.abs(a.y - b.y) || 1e-6;
+      return { ...r, rx: r.rx * Math.max(0.6, dy / Math.hypot(a.x - b.x, dy)), rz: r.rz * Math.max(0.6, dy / Math.hypot(a.z - b.z, dy)) };
+    });
+    rings.splice(0, rings.length, ...tilted);
     const tip = rings.length ? rings[rings.length - 1]!.y : armpit;
     // 손목: 팔 아래쪽에서 가장 가는 곳 (손이 넓어지기 전)
     const len = armpit - tip;
@@ -269,7 +295,11 @@ export function fitForm(F: FormMesh, step = 0.5): FormFit {
     });
     const w = rings[wristI]!;
     const top = rings[0]!;
-    const shoulder: [number, number, number] = [top.x, armpit + 3.5, top.z];
+    // 어깨 관절: 겨드랑이 위 3.5cm, 위팔 축(겨드랑이 ~ 12cm 아래 단면 가운데)을 위로 이어서
+    // (팔을 넓게 벌린 모델은 겨드랑이 높이의 팔 가운데가 관절보다 바깥에 있음)
+    const low = rings.reduce((a, b) => (Math.abs(b.y - (armpit - 12)) < Math.abs(a.y - (armpit - 12)) ? b : a));
+    const dyArm = top.y - low.y || 1;
+    const shoulder: [number, number, number] = [top.x + ((top.x - low.x) / dyArm) * 3.5, armpit + 3.5, top.z + ((top.z - low.z) / dyArm) * 3.5];
     const wrist: [number, number, number] = [w.x, w.y, w.z];
     // 팔꿈치: 어깨~손목의 54% 자리의 팔 가운데
     const ey = shoulder[1] + (wrist[1] - shoulder[1]) * 0.54;
@@ -292,7 +322,9 @@ export function fitForm(F: FormMesh, step = 0.5): FormFit {
   }
   let nb = neckMid;
   while (nb > armpit && box(nb).w * box(nb).d < minA * 1.3) nb -= step;
-  const nbA = box(nb);
+  // 목이 짧고 굵어 바로 승모근으로 이어지는 몸은 그 자리가 이미 넓어서, 목 가장 가는 곳의 1.25배까지만 (요크 목둘레 자리)
+  const mid = box(neckMid);
+  const nbA = { ...box(nb), w: Math.min(box(nb).w, mid.w * 1.25), d: Math.min(box(nb).d, mid.d * 1.25) };
   // 턱 끝: 목 가장 가는 곳 위로 앞면이 2cm 넘게 튀어나오는 첫 높이
   const neckFront = box(neckMid).front;
   let chin = neckMid;

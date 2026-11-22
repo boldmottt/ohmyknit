@@ -521,7 +521,7 @@ export function clothDraped(pieces: ArtPiece[], kind: BodyKind = 'female'): Drap
 }
 
 /** 계산 방식이 바뀌면 올려서 예전에 저장한 모양을 쓰지 않게 */
-const CLOTH_VERSION = 11;
+const CLOTH_VERSION = 12;
 
 /** 늘어뜨린 모양을 계산해 둠 (이미 했거나 하는 중이면 그대로). 한 번 계산한 모양은 기기에 저장 */
 export function ensureCloth(pieces: ArtPiece[], kind: BodyKind = 'female'): Promise<boolean> {

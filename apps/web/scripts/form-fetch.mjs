@@ -1,19 +1,28 @@
-// 여자 마네킹 3D 모델을 Sketchfab에서 받아 앱에 넣는 파일로 바꿔요 (한 번만 하면 돼요).
+// 여자·남자 마네킹 3D 모델을 Sketchfab에서 받아 앱에 넣는 파일로 바꿔요 (한 번만 하면 돼요).
 //
 //   SKETCHFAB_TOKEN=내_토큰 pnpm form:fetch      (그다음 pnpm build, 서버 다시 켜기)
 //
 // 토큰: sketchfab.com에 로그인 → Settings → Password & API → API Token 복사.
-// 모델은 Sketchfab Standard 라이선스라 앱 안에서 쓰는 건 되지만 파일 자체를 나눠 주면 안 돼서
-// 공개 저장소에 올리지 않아요. 받은 파일(apps/web/src/sim/assets/form-female.bin)은 .gitignore에 있고,
-// 없으면 앱은 계산으로 만든 마네킹을 보여 줘요.
+// 여자 모델은 Sketchfab Standard 라이선스라 앱 안에서 쓰는 건 되지만 파일 자체를 나눠 주면 안 돼서
+// 공개 저장소에 올리지 않아요 (남자 모델은 CC BY 4.0이지만 같이 받게 맞춤). 받은 파일
+// (apps/web/src/sim/assets/form-female.bin, form-male.bin)은 .gitignore에 있고, 없으면 그 몸은 계산으로 만든 마네킹이에요.
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** “Free Female Mannequin Base Mesh” by Devlane — https://sketchfab.com/3d-models/free-female-mannequin-base-mesh-187300a221c04178b96b84bf9cab97e0 */
-const MODELS = [{ kind: 'female', uid: '187300a221c04178b96b84bf9cab97e0', heightCm: 178 }];
+/**
+ * - 여자: “Free Female Mannequin Base Mesh” by Devlane (Sketchfab Standard)
+ *   https://sketchfab.com/3d-models/free-female-mannequin-base-mesh-187300a221c04178b96b84bf9cab97e0
+ *   두께 있는 껍데기라 속면을 빼고(--shell), 드레스폼처럼 가슴 꼭지를 없앰(--smooth-chest)
+ * - 남자: “Proxy Human base Mesh” by sphere_joe (CC BY 4.0)
+ *   https://sketchfab.com/3d-models/proxy-human-base-mesh-9fea713a3eec47d7a7f9a3364d08f22e
+ */
+const MODELS = [
+  { kind: 'female', uid: '187300a221c04178b96b84bf9cab97e0', heightCm: 178, flags: ['--shell', '--smooth-chest'] },
+  { kind: 'male', uid: '9fea713a3eec47d7a7f9a3364d08f22e', heightCm: 186, flags: [] },
+];
 
 const here = dirname(fileURLToPath(import.meta.url));
 const token = process.env.SKETCHFAB_TOKEN;
@@ -36,7 +45,7 @@ for (const m of MODELS) {
     const glbPath = join(dir, 'model.glb');
     writeFileSync(glbPath, Buffer.from(await file.arrayBuffer()));
     const out = join(here, '..', 'src', 'sim', 'assets', `form-${m.kind}.bin`);
-    execFileSync(process.execPath, [join(here, 'form-mesh.mjs'), glbPath, out, String(m.heightCm)], { stdio: 'inherit' });
+    execFileSync(process.execPath, [join(here, 'form-mesh.mjs'), glbPath, out, String(m.heightCm), ...m.flags], { stdio: 'inherit' });
     console.log(`✓ ${m.kind} 마네킹 → ${out}`);
   } finally {
     rmSync(dir, { recursive: true, force: true });
