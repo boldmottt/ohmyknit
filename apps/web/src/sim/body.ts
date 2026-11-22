@@ -1379,6 +1379,8 @@ function formKit(kind: BodyKind): FormKit | null {
  */
 const ARM_BAND_BELOW = 7;
 const ARM_BAND_ABOVE = 13;
+/** 3D 모델 팔 관 여유 (cm) */
+const ARM_PAD = 0.3;
 
 const smooth01 = (a: number, b: number, v: number) => {
   const t = Math.max(0, Math.min(1, (v - a) / (b - a)));
@@ -1422,7 +1424,7 @@ function buildKit(F: FormMesh): FormKit {
   torso.y.forEach((y, i) => {
     if (y >= fit.armpit - 12 && y <= fit.armpit) chest = Math.max(chest, loftGirth(torso, i));
   });
-  // 팔 무게: 겨드랑이 아래는 팔 단면 고리의 꼭짓점이면 1 (손가락까지 통째로), 위로는 어깨 관절 바깥쪽으로 갈수록 1
+  // 팔 무게: 팔 단면 고리의 꼭짓점(겨드랑이 아래 고리에서 잘린 모서리 끝까지)이면 1 (손가락까지 통째로), 몸은 겨드랑이 위로 어깨 관절 바깥쪽으로 갈수록 1
   // (삼각근이 팔을 따라감). 겨드랑이 주름에서 팔과 몸이 이어지는 곳은 몸 쪽 무게만 이웃끼리 고르게 펴서 찢어지지 않게
   // (팔 꼭짓점은 1 그대로 — 팔이 통째로 돌아야 팔 관과 맞고, 반쯤 따라온 몸 쪽은 formBody가 몸통 단면으로 다시 잼)
   const nv = F.pos.length / 3;
@@ -1433,8 +1435,8 @@ function buildKit(F: FormMesh): FormKit {
     const y = F.pos[i * 3 + 1]!;
     const arm = fit.arms.find((a) => a.side === (x >= 0 ? 1 : -1))!;
     let w = 0;
-    if (y <= fit.armpit) w = fit.armLabel[i] !== 0 ? 1 : 0;
-    else {
+    if (fit.armLabel[i] !== 0) w = 1;
+    else if (y > fit.armpit) {
       const J = arm.shoulder;
       w = smooth01(Math.abs(J[0]) - 4.5, Math.abs(J[0]) + 0.5, Math.abs(x)) * (1 - smooth01(J[1] + 2, J[1] + 7.5, y));
     }
@@ -1767,8 +1769,9 @@ function formBody(kind: BodyKind, kit: FormKit, armpitY: number, sw: number, sh:
       const rx = (i < rings.length ? r.rx : topR) * sw;
       const rz = (i < rings.length ? r.rz : topR) * sw;
       // 납작한 손(앞뒤로 넓음)은 관 세 줄로 감싸고, 나머지는 둥근 관이 축에서 가장 먼 꼭짓점까지 감싸게
+      // (+0.3cm: 단면 사이·팔꿈치에서 굽힌 곳의 작은 어긋남에 천이 몸에 붙어도 마네킹이 비치지 않게)
       if (rz - rx > 0.8) return { t: acc, rx, rz };
-      const rr = Math.max(rx, rz, (i < rings.length ? (r.rr ?? 0) : 0) * sw);
+      const rr = Math.max(rx, rz, (i < rings.length ? (r.rr ?? 0) : 0) * sw) + ARM_PAD;
       return { t: acc, rx: rr, rz: rr };
     });
     return { axis: pathAxis(pts, [0, 0, 1]), rings: ringsT };
