@@ -2,6 +2,8 @@ import { axisSheet, ringAt, type Axis, type Sheet, type Vec3 } from './drape';
 import { smoothKeys } from './form';
 import { type Layout, type Ring, type SimRole, type Tube } from './shape';
 import type { ArtPiece } from '../closet/assembledArt';
+import { femaleForm, type FormMesh } from './formMesh';
+import { fitForm, outerLoops, radial, torsoLoop, type FormFit } from './formFit';
 
 /**
  * 사람 모양 마네킹 (three.js 없이 숫자만 — 화면에 그릴 때도, 천 시뮬레이션의 부딪힘에도 같은 모양).
@@ -966,6 +968,8 @@ export type BodyModel = {
   top: number;
   /** 목 밑동: 요크 목둘레가 걸리는 자리 */
   neck: { y: number; rx: number; rz: number };
+  /** 3D 모델 마네킹이면 그 겉면 (옷에 맞춰 크기·팔 자세를 바꾼 꼭짓점, cm) — 화면에는 이것만 그림 */
+  form?: { pos: Float32Array; index: Uint16Array | Uint32Array };
 };
 
 const girthCache = new Map<BodyKind, number>();
@@ -973,6 +977,11 @@ const girthCache = new Map<BodyKind, number>();
 export function specChest(kind: BodyKind): number {
   const hit = girthCache.get(kind);
   if (hit) return hit;
+  const kit = formKit(kind);
+  if (kit) {
+    girthCache.set(kind, kit.chest);
+    return kit.chest;
+  }
   const L = loftFrom(BODY_SPECS[kind].torso, BODY_SPECS[kind].bumps, { sw: 1, sh: 1, y0: 0, breasts: BODY_SPECS[kind].breasts });
   let g = 0;
   L.y.forEach((y, i) => {
@@ -987,6 +996,12 @@ const headCache = new Map<BodyKind, number>();
 export function specHeadGirth(kind: BodyKind): number {
   const hit = headCache.get(kind);
   if (hit) return hit;
+  const kit = formKit(kind);
+  if (kit) {
+    const g = modelHeadGirth(kit);
+    headCache.set(kind, g);
+    return g;
+  }
   const H = unitHead(kind);
   const sk = skullOf(BODY_SPECS[kind].face);
   let g = 0;
@@ -1315,6 +1330,434 @@ function seamsFor(spec: Spec, torso: Loft, arms: Limb[], armTops: number[], armS
   return out;
 }
 
+/* ───────── 3D 모델 마네킹 (여자: 무료 공개 모델) ───────── */
+
+/**
+ * 모델 하나를 몸으로 쓰는 준비물 (종류마다 한 번): 높이마다 자른 몸통·머리 단면(모델 좌표),
+ * 팔 꼭짓점 무게(옷을 입힐 때 소매를 따라 팔을 돌림), 가슴둘레
+ */
+type FormKit = {
+  F: FormMesh;
+  fit: FormFit;
+  torso: Loft;
+  head: Loft;
+  /** 꼭짓점마다: 팔(어깨 관절에서 돌아감) 무게, 아래팔(팔꿈치에서 한 번 더) 무게 */
+  armW: Float32Array;
+  foreW: Float32Array;
+  chest: number;
+};
+
+const kits = new Map<BodyKind, FormKit | null>();
+
+/**
+ * 어떤 몸을 쓰는지 (3D 모델이면 꼭짓점 수, 아니면 계산으로 만든 몸). 천 계산 결과를 기억하는 열쇠에 넣어서
+ * 모델 파일을 나중에 받거나 바꾸면 예전 몸에 맞춘 결과를 쓰지 않고 다시 계산하게
+ */
+export function bodySignature(kind: BodyKind): string {
+  const F = kind === 'female' ? femaleForm() : null;
+  return F ? `form${F.pos.length / 3}` : 'calc';
+}
+
+/** 3D 모델 마네킹이면 겨드랑이 높이 팔 단면 가운데의 앞뒤 자리 (소매를 여기에 맞춤), 아니면 0 */
+export function sleeveOffsetZ(kind: BodyKind): number {
+  const kit = formKit(kind);
+  if (!kit) return 0;
+  const zs = kit.fit.arms.map((a) => a.rings[0]!.z);
+  return zs.reduce((s, z) => s + z, 0) / zs.length;
+}
+function formKit(kind: BodyKind): FormKit | null {
+  if (kits.has(kind)) return kits.get(kind)!;
+  const F = kind === 'female' ? femaleForm() : null;
+  const kit = F ? buildKit(F) : null;
+  kits.set(kind, kit);
+  return kit;
+}
+
+const smooth01 = (a: number, b: number, v: number) => {
+  const t = Math.max(0, Math.min(1, (v - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+function buildKit(F: FormMesh): FormKit {
+  const fit = fitForm(F);
+  const A = 144;
+  const kOf = (y: number) => Math.max(0, Math.min(fit.slices.length - 1, Math.round(y / fit.step)));
+  // 몸통: 사타구니에서 턱 위까지, 가운데를 지나는 겉 고리만 (겨드랑이 아래 팔은 따로 떨어진 고리라 빠짐)
+  const torso: Loft = { y: [], cx: [], cz: [], A, r: [] };
+  // (목 위쪽 끝은 턱 바로 아래까지 — 그 위는 머리 단면이 맡음)
+  for (let k = kOf(fit.crotch); k <= kOf(fit.chin - 0.5); k++) {
+    const sl = fit.slices[k]!;
+    const t = torsoLoop(outerLoops(sl));
+    if (!t) continue;
+    const cz = (t.z0 + t.z1) / 2;
+    torso.y.push(sl.y);
+    torso.cx.push(0);
+    torso.cz.push(cz);
+    torso.r.push(...radial(sl, t.segs, 0, cz, A));
+  }
+  // 머리: 턱 아래부터 정수리까지 겉 고리 전부
+  const head: Loft = { y: [], cx: [], cz: [], A, r: [] };
+  for (let k = kOf(fit.chin - 1.5); k < fit.slices.length; k++) {
+    const sl = fit.slices[k]!;
+    const ls = outerLoops(sl);
+    if (!ls.length) continue;
+    const z0 = Math.min(...ls.map((l) => l.z0));
+    const z1 = Math.max(...ls.map((l) => l.z1));
+    const cz = (z0 + z1) / 2;
+    head.y.push(sl.y);
+    head.cx.push(0);
+    head.cz.push(cz);
+    head.r.push(...radial(sl, ls.flatMap((l) => l.segs), 0, cz, A));
+  }
+  // 가슴둘레: 겨드랑이 아래 12cm 안에서 가장 굵은 단면
+  let chest = 0;
+  torso.y.forEach((y, i) => {
+    if (y >= fit.armpit - 12 && y <= fit.armpit) chest = Math.max(chest, loftGirth(torso, i));
+  });
+  // 팔 무게: 겨드랑이 아래는 팔 단면 고리의 꼭짓점이면 1 (손가락까지 통째로), 위로는 어깨 관절 바깥쪽으로 갈수록 1
+  // (삼각근이 팔을 따라감). 겨드랑이 주름에서 팔과 몸이 이어지는 곳은 무게를 이웃끼리 고르게 펴서 찢어지지 않게
+  const nv = F.pos.length / 3;
+  const armW = new Float32Array(nv);
+  const foreW = new Float32Array(nv);
+  for (let i = 0; i < nv; i++) {
+    const x = F.pos[i * 3]!;
+    const y = F.pos[i * 3 + 1]!;
+    const arm = fit.arms.find((a) => a.side === (x >= 0 ? 1 : -1))!;
+    let w = 0;
+    if (y <= fit.armpit) w = fit.armLabel[i] !== 0 ? 1 : 0;
+    else {
+      const J = arm.shoulder;
+      w = smooth01(Math.abs(J[0]) - 4.5, Math.abs(J[0]) + 0.5, Math.abs(x)) * (1 - smooth01(J[1] + 2, J[1] + 7.5, y));
+    }
+    armW[i] = w;
+    foreW[i] = fit.armLabel[i] !== 0 ? smooth01(arm.elbow[1] + 3, arm.elbow[1] - 3, y) : 0;
+  }
+  {
+    const nbr: number[][] = Array.from({ length: nv }, () => []);
+    for (let t = 0; t < F.index.length; t += 3) {
+      for (let e = 0; e < 3; e++) {
+        const a = F.index[t + e]!;
+        const b = F.index[t + ((e + 1) % 3)]!;
+        nbr[a]!.push(b);
+        nbr[b]!.push(a);
+      }
+    }
+    const band: number[] = [];
+    for (let i = 0; i < nv; i++) {
+      const y = F.pos[i * 3 + 1]!;
+      if (y > fit.armpit - 6 && y < fit.armpit + 12) band.push(i);
+    }
+    for (let it = 0; it < 12; it++) {
+      const next = band.map((i) => {
+        const n = nbr[i]!;
+        let s = 0;
+        for (const j of n) s += armW[j]!;
+        return armW[i]! * 0.5 + (s / n.length) * 0.5;
+      });
+      band.forEach((i, k) => (armW[i] = next[k]!));
+    }
+  }
+  return { F, fit, torso, head, armW, foreW, chest };
+}
+
+type M3 = [number, number, number, number, number, number, number, number, number];
+/** a 방향을 b 방향으로 돌리는 회전 (행 우선 3×3) */
+function rotFromTo(a: Vec3, b: Vec3): M3 {
+  const u = norm3(a);
+  const v = norm3(b);
+  const c = dot3(u, v);
+  const w: Vec3 = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  const s2 = dot3(w, w);
+  if (s2 < 1e-12) return [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const k = (1 - c) / s2;
+  return [
+    c + k * w[0] * w[0], k * w[0] * w[1] - w[2], k * w[0] * w[2] + w[1],
+    k * w[1] * w[0] + w[2], c + k * w[1] * w[1], k * w[1] * w[2] - w[0],
+    k * w[2] * w[0] - w[1], k * w[2] * w[1] + w[0], c + k * w[2] * w[2],
+  ];
+}
+const apply = (m: M3, v: Vec3): Vec3 => [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
+
+/** 축을 위(tTop)에서 내려가며 점 c에서 거리 len인 곳 (모자라면 축을 이어 늘림) */
+function pointAtDistance(axis: Axis, tTop: number, c: Vec3, len: number): Vec3 {
+  let lo = tTop;
+  let hi = tTop;
+  for (let t = tTop; t > tTop - 400; t -= 0.5) {
+    const d = Math.hypot(...sub3(axis.at(t).p, c));
+    if (d >= len) {
+      lo = t;
+      break;
+    }
+    hi = t;
+    lo = t - 0.5;
+  }
+  for (let k = 0; k < 30; k++) {
+    const m = (lo + hi) / 2;
+    if (Math.hypot(...sub3(axis.at(m).p, c)) >= len) lo = m;
+    else hi = m;
+  }
+  return axis.at((lo + hi) / 2).p;
+}
+
+/** 3D 모델 머리의 모자 둘레 (턱 끝에서 머리 높이의 62~80% 사이 가장 굵은 곳 = 귀 위 이마~뒤통수) */
+function modelHeadGirth(kit: FormKit): number {
+  const { fit, head } = kit;
+  const H = fit.height - fit.chin;
+  let g = 0;
+  head.y.forEach((y, i) => {
+    if (y >= fit.chin + 0.62 * H && y <= fit.chin + 0.8 * H) g = Math.max(g, loftGirth(head, i));
+  });
+  return g;
+}
+
+/**
+ * 모자 받침 (3D 모델): 모델의 머리와 목(목 밑동까지)을 모자 둘레에 맞춰 키우고, 그 아래로 받침 목·기둥·판.
+ * 모델 좌표 → 받침 좌표: 턱 끝을 chinY에, hs배
+ */
+function formStand(kind: BodyKind, kit: FormKit, L: Layout): BodyModel {
+  const { F, fit } = kit;
+  const h = L.head!;
+  const hs = ellipsePerimeter(h.rh, h.rz) / modelHeadGirth(kit);
+  const crown = h.cy + h.rv;
+  const chinY = crown - (fit.height - fit.chin) * hs + HAT_LIFT * hs;
+  const T = (x: number, y: number, z: number): Vec3 => [x * hs, chinY + (y - fit.chin) * hs, z * hs];
+  // 목이 가장 가는 곳 조금 아래에서 평평하게 잘라 그 위만 (걸친 삼각형은 자르는 면에서 잘라 가장자리가 반듯하게)
+  const cut = fit.neckMid - 1.5;
+  const nv = F.pos.length / 3;
+  const remap = new Int32Array(nv).fill(-1);
+  const pos: number[] = [];
+  const idx: number[] = [];
+  const edgeVert = new Map<number, number>();
+  const vert = (v: number) => {
+    if (remap[v]! < 0) {
+      remap[v] = pos.length / 3;
+      pos.push(...T(F.pos[v * 3]!, F.pos[v * 3 + 1]!, F.pos[v * 3 + 2]!));
+    }
+    return remap[v]!;
+  };
+  // 모서리 a-b가 자르는 면과 만나는 점 (모서리마다 한 번만 만듦)
+  const onCut = (a: number, b: number) => {
+    const key = Math.min(a, b) * nv + Math.max(a, b);
+    const hit = edgeVert.get(key);
+    if (hit !== undefined) return hit;
+    const ya = F.pos[a * 3 + 1]!;
+    const yb = F.pos[b * 3 + 1]!;
+    const f = (cut - ya) / (yb - ya);
+    const p = T(F.pos[a * 3]! + (F.pos[b * 3]! - F.pos[a * 3]!) * f, cut, F.pos[a * 3 + 2]! + (F.pos[b * 3 + 2]! - F.pos[a * 3 + 2]!) * f);
+    const i = pos.length / 3;
+    pos.push(...p);
+    edgeVert.set(key, i);
+    return i;
+  };
+  for (let t = 0; t < F.index.length; t += 3) {
+    const tri = [F.index[t]!, F.index[t + 1]!, F.index[t + 2]!];
+    const up = tri.map((v) => F.pos[v * 3 + 1]! >= cut);
+    const n = up.filter(Boolean).length;
+    if (n === 0) continue;
+    if (n === 3) {
+      idx.push(vert(tri[0]!), vert(tri[1]!), vert(tri[2]!));
+      continue;
+    }
+    // 위에 남는 쪽만 (돌림 순서 그대로)
+    const poly: number[] = [];
+    for (let e = 0; e < 3; e++) {
+      const a = tri[e]!;
+      const b = tri[(e + 1) % 3]!;
+      if (up[e]) poly.push(vert(a));
+      if (up[e] !== up[(e + 1) % 3]) poly.push(onCut(a, b));
+    }
+    for (let k = 1; k + 1 < poly.length; k++) idx.push(poly[0]!, poly[k]!, poly[k + 1]!);
+  }
+  const head: Loft = { y: kit.head.y.map((y) => chinY + (y - fit.chin) * hs), cx: kit.head.cx.map((x) => x * hs), cz: kit.head.cz.map((z) => z * hs), A: kit.head.A, r: kit.head.r.map((r) => r * hs) };
+  // 받침 목: 잘린 목 끝의 타원(가운데·너비·깊이)에서 그대로 이어져 아래로 조금 퍼짐
+  const ck = Math.max(0, Math.min(fit.slices.length - 1, Math.round(cut / fit.step)));
+  const cl = torsoLoop(outerLoops(fit.slices[ck]!))!;
+  const rx = ((cl.x1 - cl.x0) / 2) * hs;
+  const rz = ((cl.z1 - cl.z0) / 2) * hs;
+  const nz = ((cl.z0 + cl.z1) / 2) * hs;
+  const nr = (rx + rz) / 2;
+  const neckTop: Vec3 = [0, chinY + (cut - fit.chin) * hs, nz];
+  const neckBottom: Vec3 = [0, neckTop[1] - 11 * hs, nz + 0.6 * hs];
+  const nl = Math.hypot(...sub3(neckBottom, neckTop));
+  const neck: Limb = {
+    axis: lineAxis(neckTop, neckBottom),
+    rings: smoothKeys(
+      [
+        { t: -0.4, rx: rx * 0.9, rz: rz * 0.9 },
+        { t: 0, rx: rx + 0.05, rz: rz + 0.05 },
+        { t: nl * 0.4, rx: rx * 1.02, rz: rz * 1.02 },
+        { t: nl * 0.9, rx: rx * 1.16, rz: rz * 1.12 },
+        { t: nl, rx: rx * 1.22, rz: rz * 1.16 },
+        { t: nl + 0.8, rx: nr * 0.6, rz: nr * 0.6 },
+        { t: nl + 1, rx: 0.3, rz: 0.3 },
+      ],
+      4,
+    ),
+  };
+  const baseY = neckBottom[1] - 14 * hs;
+  return {
+    kind,
+    torso: null,
+    head,
+    arms: [],
+    hands: [],
+    limbs: [neck],
+    details: [neck],
+    seams: [],
+    pole: { a: [0, neckBottom[1] - 0.5, neckBottom[2]], b: [0, baseY, neckBottom[2]], r: 0.8 },
+    base: { c: [0, baseY - 0.8, neckBottom[2]], r: h.rh * 1.05, h: 1.6 },
+    top: crown + HAT_LIFT * hs,
+    neck: { y: neckBottom[1], rx: nr, rz: nr },
+    form: { pos: new Float32Array(pos), index: pos.length / 3 < 65536 ? new Uint16Array(idx) : new Uint32Array(idx) },
+  };
+}
+
+/**
+ * 드레스폼 박음선 (천 조각을 이은 자리): 앞·뒤 가운데, 가슴 꼭지를 지나는 앞뒤 공주선, 옆선, 목둘레, 허리 테이프.
+ * 몸통 단면 위의 점들 (각도는 도, 90 = 앞)
+ */
+function formSeams(kit: FormKit, torso: Loft, armpitY: number, sh: number): Vec3[][] {
+  const { fit } = kit;
+  const Y = (y: number) => armpitY + (y - fit.armpit) * sh;
+  const lift = 0.04;
+  const out: Vec3[][] = [];
+  const vertical = (phi: number, y0: number, y1: number) => {
+    const pts: Vec3[] = [];
+    for (let y = y1; y >= y0; y -= 0.75) pts.push(torsoPoint(torso, phi, Y(y), lift));
+    out.push(pts);
+  };
+  const ring = (y: number) => {
+    const pts: Vec3[] = [];
+    for (let a = 0; a < 360; a += 5) pts.push(torsoPoint(torso, a, Y(y), lift));
+    pts.push(pts[0]!);
+    out.push(pts);
+  };
+  // 가슴 꼭지 각도 (가슴 높이에서 가장 앞으로 나온 곳)
+  const kb = kit.torso.y.reduce((b, y, i) => (Math.abs(y - (fit.armpit - 0.5)) < Math.abs(kit.torso.y[b]! - (fit.armpit - 0.5)) ? i : b), 0);
+  let best = 0;
+  let phiB = 60;
+  for (let a = 0; a < kit.torso.A / 4; a++) {
+    const r = kit.torso.r[kb * kit.torso.A + a]!;
+    const z = r * Math.sin((2 * Math.PI * a) / kit.torso.A);
+    if (z > best) {
+      best = z;
+      phiB = (360 * a) / kit.torso.A;
+    }
+  }
+  // 허리: 사타구니와 겨드랑이 사이에서 가장 가는 단면
+  let waist = (fit.crotch + fit.armpit) / 2;
+  let g = Infinity;
+  kit.torso.y.forEach((y, i) => {
+    if (y > fit.crotch + 12 && y < fit.armpit - 6) {
+      const gi = loftGirth(kit.torso, i);
+      if (gi < g) {
+        g = gi;
+        waist = y;
+      }
+    }
+  });
+  const bottom = fit.crotch + 3;
+  vertical(90, bottom, fit.neckBase.y - 2.5);
+  vertical(270, bottom, fit.neckBase.y);
+  for (const phi of [phiB, 180 - phiB, 360 - phiB, 180 + phiB]) vertical(phi, bottom + 3, fit.armpit + 7);
+  vertical(0, bottom + 1, fit.armpit - 0.5);
+  vertical(180, bottom + 1, fit.armpit - 0.5);
+  ring(fit.neckBase.y);
+  ring(waist);
+  return out;
+}
+
+/**
+ * 3D 모델 몸: 옷 크기에 맞춰 늘이고(가로 sw, 세로 sh, 겨드랑이 기준), 소매가 있으면 팔을 소매 축을 따라
+ * 어깨·팔꿈치에서 돌림(꼭짓점마다 무게만큼 섞음). 부딪힘용 몸통·머리 단면과 팔·다리 관도 같이.
+ */
+function formBody(kind: BodyKind, kit: FormKit, armpitY: number, sw: number, sh: number, sleeves: { side: 1 | -1; axis: Axis; tTop: number }[]): BodyModel {
+  const { F, fit } = kit;
+  const S = (p: Vec3): Vec3 => [p[0] * sw, armpitY + (p[1] - fit.armpit) * sh, p[2] * sw];
+  const nv = F.pos.length / 3;
+  const pos = new Float32Array(nv * 3);
+  for (let i = 0; i < nv; i++) {
+    const q = S([F.pos[i * 3]!, F.pos[i * 3 + 1]!, F.pos[i * 3 + 2]!]);
+    pos[i * 3] = q[0];
+    pos[i * 3 + 1] = q[1];
+    pos[i * 3 + 2] = q[2];
+  }
+  // 팔마다 자세: 어깨 관절 J는 그대로, 팔꿈치 E와 손목 W를 소매 축 위로
+  const poses = new Map<number, (p: Vec3, w: number, wf: number) => Vec3>();
+  for (const sl of sleeves) {
+    const arm = fit.arms.find((a) => a.side === sl.side)!;
+    const J = S(arm.shoulder);
+    const E = S(arm.elbow);
+    const W = S(arm.wrist);
+    const E2 = pointAtDistance(sl.axis, sl.tTop, J, Math.hypot(...sub3(E, J)));
+    const W2 = pointAtDistance(sl.axis, sl.tTop, E2, Math.hypot(...sub3(W, E)));
+    const Rs = rotFromTo(sub3(E, J), sub3(E2, J));
+    const Re = rotFromTo(apply(Rs, sub3(W, E)), sub3(W2, E2));
+    poses.set(sl.side, (p, w, wf) => {
+      const up = apply(Rs, sub3(p, J));
+      const ts: Vec3 = [J[0] + up[0], J[1] + up[1], J[2] + up[2]];
+      const fe = apply(Re, apply(Rs, sub3(p, E)));
+      const tf: Vec3 = [E2[0] + fe[0], E2[1] + fe[1], E2[2] + fe[2]];
+      const g: Vec3 = [ts[0] + (tf[0] - ts[0]) * wf, ts[1] + (tf[1] - ts[1]) * wf, ts[2] + (tf[2] - ts[2]) * wf];
+      return [p[0] + (g[0] - p[0]) * w, p[1] + (g[1] - p[1]) * w, p[2] + (g[2] - p[2]) * w];
+    });
+  }
+  if (poses.size) {
+    for (let i = 0; i < nv; i++) {
+      const w = kit.armW[i]!;
+      if (w <= 0) continue;
+      const f = poses.get(F.pos[i * 3]! >= 0 ? 1 : -1);
+      if (!f) continue;
+      const q = f([pos[i * 3]!, pos[i * 3 + 1]!, pos[i * 3 + 2]!], w, kit.foreW[i]!);
+      pos[i * 3] = q[0];
+      pos[i * 3 + 1] = q[1];
+      pos[i * 3 + 2] = q[2];
+    }
+  }
+  const scaleLoftXZ = (L: Loft): Loft => ({ y: L.y.map((y) => armpitY + (y - fit.armpit) * sh), cx: L.cx.map((x) => x * sw), cz: L.cz.map((z) => z * sw), A: L.A, r: L.r.map((r) => r * sw) });
+  // 팔·다리 관: 단면 가운데를 잇는 축 (팔은 자세대로 옮김), 굵기는 단면 반지름
+  const arms: Limb[] = fit.arms.map((arm) => {
+    const f = poses.get(arm.side);
+    const rings = [...arm.rings].reverse(); // 손끝 → 겨드랑이
+    const pts = rings.map((r) => {
+      const p = S([r.x, r.y, r.z]);
+      return f ? f(p, 1, smooth01(arm.elbow[1] + 3, arm.elbow[1] - 3, r.y)) : p;
+    });
+    let acc = 0;
+    const ringsT: Ring[] = pts.map((p, i) => {
+      if (i > 0) acc += Math.hypot(...sub3(p, pts[i - 1]!));
+      return { t: acc, rx: rings[i]!.rx * sw, rz: rings[i]!.rz * sw };
+    });
+    return { axis: pathAxis(pts, [0, 0, 1]), rings: ringsT };
+  });
+  const limbs: Limb[] = fit.legs.map((leg) => {
+    const pts = leg.rings.map((r) => S([r.x, r.y, r.z]));
+    let acc = 0;
+    const ringsT: Ring[] = pts.map((p, i) => {
+      if (i > 0) acc += Math.hypot(...sub3(p, pts[i - 1]!));
+      return { t: acc, rx: leg.rings[i]!.rx * sw, rz: leg.rings[i]!.rz * sw };
+    });
+    return { axis: pathAxis(pts, [0, 0, 1]), rings: ringsT };
+  });
+  const floor = armpitY - fit.armpit * sh;
+  const torso = scaleLoftXZ(kit.torso);
+  return {
+    kind,
+    torso,
+    head: scaleLoftXZ(kit.head),
+    arms,
+    hands: [],
+    limbs,
+    details: [],
+    seams: formSeams(kit, torso, armpitY, sh),
+    pole: null,
+    base: { c: [0, floor - 0.6, 2 * sw], r: 26 * sw, h: 1.2 },
+    top: armpitY + (fit.height - fit.armpit) * sh,
+    neck: { y: armpitY + (fit.neckBase.y - fit.armpit) * sh, rx: fit.neckBase.rx * sw, rz: fit.neckBase.rz * sw },
+    form: { pos, index: F.index },
+  };
+}
+
 /**
  * 옷(스웨터)에 맞춘 몸. 가슴둘레는 옷보다 6% 작게, 겨드랑이는 옷 윗단보다 조금 위,
  * 팔은 소매 축을 따라(손목이 소맷부리 근처). 소매가 없으면 기본 자세로 팔을 내림.
@@ -1333,6 +1776,17 @@ export function bodyFor(kind: BodyKind, L: Layout, tubes: Map<ArtPiece, Tube>, a
   const sw = Math.max(0.5, Math.min(1.3, chest / 1.06 / specChest(kind)));
   const sh = Math.max(0.6, Math.min(1.15, Math.pow(sw, 0.6)));
   const armpitY = L.topY + 1.5 * sh;
+  const kit = formKit(kind);
+  if (kit) {
+    const sleeves: { side: 1 | -1; axis: Axis; tTop: number }[] = [];
+    for (const [role, side] of [['sleeveL', -1], ['sleeveR', 1]] as const) {
+      const s = find(L, role);
+      const t = s ? tubes.get(s) : undefined;
+      const axis = s ? axes.get(s) : undefined;
+      if (t && axis) sleeves.push({ side, axis, tTop: t.length });
+    }
+    return formBody(kind, kit, armpitY, sw, sh, sleeves);
+  }
   const torso = loftFrom(spec.torso, spec.bumps, { sw, sh, y0: armpitY, breasts: spec.breasts });
   // 레퍼런스처럼 가는 목 위에 또렷한 머리 (머리 너비 ≈ 목의 두 배)
   const hs = ((sw + sh) / 2) * 1.04;
@@ -1399,6 +1853,8 @@ const HAT_LIFT = -1;
 
 /** 모자 받침: 사람 머리(모자 둘레에 맞춘 크기) + 목 + 받침대 */
 export function standFor(kind: BodyKind, L: Layout): BodyModel {
+  const kit = formKit(kind);
+  if (kit) return formStand(kind, kit, L);
   const spec = BODY_SPECS[kind];
   const h = L.head!;
   // 모자를 펼쳐 씌운 타원 머리와 둘레가 같게 (사람 머리는 앞뒤로 길고 조금 각져서, 너비로 맞추면

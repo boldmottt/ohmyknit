@@ -4,11 +4,12 @@ import { DEFAULT_MAIN, type Palette } from '@knitcloset/knit-render';
 import type { ArtPiece } from '../closet/assembledArt';
 import type { Sheet } from './drape';
 import { bodyOf, emptyBody, limbSheet, loftSheet, type BodyKind, type BodyModel } from './body';
-import type { Occupancy } from './cloth';
+import { occlusionAt, OCC_FORM, type Occupancy } from './cloth';
 import { makeKnitMaterial, rowDataTexture } from './fabric';
 import { addOcclusion, edgePath, patch } from './mesh';
 import { clothDraped, drapeFor, shapeKey, withOcclusion } from './drapeSim';
 import { pieceMaps, plainMaps, type KnitMaps } from './textures';
+import { addWeave, weaveTexture } from './formFabric';
 
 /**
  * 3D 조립 시뮬레이션 (CLO 3D처럼 패턴판을 바느질한 자리에 입혀 봄).
@@ -46,13 +47,13 @@ export class TexCache {
   }
 }
 
-/** 마네킹: 매장 마네킹처럼 무광 회색 */
-const FORM_COLOR = 0xbdbdbb;
+/** 마네킹: 재봉용 드레스폼처럼 크림색 린넨을 팽팽하게 씌운 천 (색은 천 텍스처, 여기는 살짝 물들이는 색) */
+const FORM_COLOR = 0xffffff;
 const POLE_COLOR = 0x9a9aa2;
-/** 발밑 판: 마네킹보다 조금 진한 회색 */
-const BASE_COLOR = 0x9d9d9b;
-/** 이음선: 마네킹 겉면의 가는 홈 */
-const SEAM_COLOR = 0x8c8c8a;
+/** 발밑 판: 나무 받침처럼 따뜻한 회갈색 */
+const BASE_COLOR = 0x8f8780;
+/** 이음선: 천 조각을 이은 박음선 (천보다 조금 진한 실) */
+const SEAM_COLOR = 0xb9ad9a;
 
 function formMesh(sheet: Sheet, mat: THREE.Material, occ: Occupancy | undefined, name: string): THREE.Mesh {
   const m = new THREE.Mesh(patch(occ ? withOcclusion(sheet, occ) : sheet, 0, sheet.rows, 0, 1)!, mat);
@@ -62,11 +63,43 @@ function formMesh(sheet: Sheet, mat: THREE.Material, occ: Occupancy | undefined,
   return m;
 }
 
+let weave: ReturnType<typeof weaveTexture> | null = null;
 function formMaterial() {
-  const mat = new THREE.MeshPhysicalMaterial({ color: FORM_COLOR, roughness: 0.62, metalness: 0, clearcoat: 0.06, clearcoatRoughness: 0.6 });
-  mat.onBeforeCompile = (shader) => addOcclusion(shader, 0.75);
-  mat.customProgramCacheKey = () => 'form-ao-2';
+  weave ??= weaveTexture(8);
+  const tex = weave;
+  // 무광 천 (가벼운 재질: 휴대폰에서도 옷장 그림이 빨리 나오게)
+  const mat = new THREE.MeshStandardMaterial({ color: FORM_COLOR, roughness: 0.94, metalness: 0 });
+  mat.onBeforeCompile = (shader) => {
+    addOcclusion(shader, 0.75);
+    addWeave(shader, tex);
+  };
+  mat.customProgramCacheKey = () => 'form-weave-3';
   return mat;
+}
+
+/**
+ * 3D 모델 마네킹 겉면 (꼭짓점·삼각형 그대로, 법선은 다시 계산).
+ * 천 시뮬레이션 결과가 있으면 자기 몸에 가린 곳(겨드랑이·팔 안쪽)만 그늘 — 옷에는 가리지 않게
+ */
+function formModelMesh(f: NonNullable<BodyModel['form']>, mat: THREE.Material, occ: Occupancy | undefined): THREE.Mesh {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(f.pos, 3));
+  g.setIndex(new THREE.BufferAttribute(f.index, 1));
+  g.computeVertexNormals();
+  const n = f.pos.length / 3;
+  const ao = new Float32Array(n).fill(1);
+  if (occ) {
+    const N = g.getAttribute('normal');
+    for (let i = 0; i < n; i++) {
+      ao[i] = 0.35 + 0.65 * occlusionAt(occ, [f.pos[i * 3]!, f.pos[i * 3 + 1]!, f.pos[i * 3 + 2]!], [N.getX(i), N.getY(i), N.getZ(i)], 12, OCC_FORM);
+    }
+  }
+  g.setAttribute('occlusion', new THREE.BufferAttribute(ao, 1));
+  const m = new THREE.Mesh(g, mat);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  m.name = 'torso';
+  return m;
 }
 
 /** 같은 몸이면 다시 만들지 않음 (+1 할 때마다 마네킹 그늘까지 다시 계산하지 않게) */
@@ -88,12 +121,18 @@ function bodyGroup(b: BodyModel, occ: Occupancy | undefined, key: string): THREE
   const grp = new THREE.Group();
   grp.name = 'form';
   const mat = formMaterial();
-  if (b.torso) grp.add(formMesh(loftSheet(b.torso, 128), mat, occ, 'torso'));
-  grp.add(formMesh(loftSheet(b.head, 144), mat, occ, 'head'));
-  for (const arm of b.arms) grp.add(formMesh(limbSheet(arm, 56), mat, occ, 'arm'));
-  for (const hand of b.hands) grp.add(formMesh(limbSheet(hand, 48), mat, occ, 'hand'));
-  for (const limb of b.limbs) grp.add(formMesh(limbSheet(limb, 48), mat, occ, 'limb'));
-  for (const d of b.details) grp.add(formMesh(limbSheet(d, 24), mat, occ, 'detail'));
+  if (b.form) {
+    grp.add(formModelMesh(b.form, mat, occ));
+    // 3D 모델 밖에 붙는 것 (모자 받침의 목)
+    for (const d of b.details) grp.add(formMesh(limbSheet(d, 48), mat, occ, 'detail'));
+  } else {
+    if (b.torso) grp.add(formMesh(loftSheet(b.torso, 128), mat, occ, 'torso'));
+    grp.add(formMesh(loftSheet(b.head, 144), mat, occ, 'head'));
+    for (const arm of b.arms) grp.add(formMesh(limbSheet(arm, 56), mat, occ, 'arm'));
+    for (const hand of b.hands) grp.add(formMesh(limbSheet(hand, 48), mat, occ, 'hand'));
+    for (const limb of b.limbs) grp.add(formMesh(limbSheet(limb, 48), mat, occ, 'limb'));
+    for (const d of b.details) grp.add(formMesh(limbSheet(d, 24), mat, occ, 'detail'));
+  }
   if (b.seams.length) {
     const seamMat = new THREE.MeshStandardMaterial({ color: SEAM_COLOR, roughness: 0.8 });
     for (const line of b.seams) {

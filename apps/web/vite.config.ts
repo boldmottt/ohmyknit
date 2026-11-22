@@ -37,5 +37,7 @@ export default defineConfig({
   server: {
     proxy: { '/api': 'http://localhost:8787' },
   },
+  // 마네킹 3D 모델 (src/sim/assets/*.bin, scripts/form-mesh.mjs로 만듦)은 JS에 넣어 함께 받음
+  assetsInclude: ['**/*.bin'],
   build: { target: 'es2022', sourcemap: true },
 });

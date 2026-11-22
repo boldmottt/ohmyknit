@@ -1,7 +1,7 @@
 import type { ArtPiece } from '../closet/assembledArt';
 import { bakeCloth, occlusionAt, OCC_FORM, separate, simulate, type ClothInput, type ClothOutput, type ClothPanel, type Collider, type Occupancy, type Seam, type Vec3 } from './cloth';
 import { drape, girth, type Draped, type Sheet } from './drape';
-import { bodyOf, loftReach, type BodyKind, type BodyModel, type Limb } from './body';
+import { bodyOf, bodySignature, loftReach, sleeveOffsetZ, type BodyKind, type BodyModel, type Limb } from './body';
 
 /**
  * 입힌 모양(drape) → 천 시뮬레이션 → 다시 그릴 수 있는 면.
@@ -33,6 +33,7 @@ export type ClothPlan = {
 export function shapeKey(pieces: ArtPiece[], kind: BodyKind = 'female'): string {
   return JSON.stringify([
     kind,
+    bodySignature(kind),
     pieces.map((p) => [p.piece.id, p.piece.name, p.piece.construction, p.piece.direction, p.piece.rows.length, p.piece.totalStitches, p.gauge.st, p.gauge.row]),
   ]);
 }
@@ -41,6 +42,7 @@ export function shapeKey(pieces: ArtPiece[], kind: BodyKind = 'female'): string 
 export function drapeFor(pieces: ArtPiece[], kind: BodyKind, wrinkles = false): Draped {
   return drape(pieces, {
     wrinkles,
+    sleeveZ: sleeveOffsetZ(kind),
     body: (L, tubes, axes) => {
       const b = bodyOf(kind, L, tubes, axes);
       return b?.torso ? { reach: (theta, y) => loftReach(b.torso!, theta, y), neck: b.neck } : null;
@@ -519,7 +521,7 @@ export function clothDraped(pieces: ArtPiece[], kind: BodyKind = 'female'): Drap
 }
 
 /** 계산 방식이 바뀌면 올려서 예전에 저장한 모양을 쓰지 않게 */
-const CLOTH_VERSION = 10;
+const CLOTH_VERSION = 11;
 
 /** 늘어뜨린 모양을 계산해 둠 (이미 했거나 하는 중이면 그대로). 한 번 계산한 모양은 기기에 저장 */
 export function ensureCloth(pieces: ArtPiece[], kind: BodyKind = 'female'): Promise<boolean> {

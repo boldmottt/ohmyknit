@@ -101,6 +101,17 @@ export default function Settings() {
           다른 네임태그로 바꾸기
         </button>
       </section>
+
+      <section className="card" style={{ marginTop: 16 }}>
+        <h2 className="serif">만든 사람들</h2>
+        <p className="small muted">
+          여자 마네킹 3D 모델(맥에 받아 둔 경우): “Free Female Mannequin Base Mesh” — Devlane (
+          <a href="https://sketchfab.com/3d-models/free-female-mannequin-base-mesh-187300a221c04178b96b84bf9cab97e0" target="_blank" rel="noreferrer">
+            Sketchfab
+          </a>
+          , Sketchfab Standard 라이선스). 천을 씌운 질감·박음선을 더하고 가슴을 매끈하게 다듬어 썼어요.
+        </p>
+      </section>
     </div>
   );
 }

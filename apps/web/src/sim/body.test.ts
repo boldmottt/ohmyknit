@@ -1,10 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { convertPattern } from '@knitcloset/gauge-engine';
 import { parsePattern, SAMPLE_BEANIE, SAMPLE_PATTERN } from '@knitcloset/pattern-schema';
-import { BODY_KINDS, emptyBody, loftGirth, loftReach, specHeadGirth, type BodyKind, type Loft } from './body';
+import { BODY_KINDS, emptyBody, loftGirth, loftReach, specHeadGirth, type BodyKind, type BodyModel, type Loft } from './body';
 import { readBody, writeBody } from './bodyPref';
 import { separate, type ClothPanel } from './cloth';
 import { bodyColliders, bodyOfDraped, drapeFor } from './drapeSim';
+import { femaleForm } from './formMesh';
+
+/**
+ * 여자 마네킹 3D 모델 파일(pnpm form:fetch로 받음)이 있으면 여자는 그 모델, 없으면 계산으로 만든 몸.
+ * 모델 파일은 라이선스상 저장소에 없어서, 받아 두지 않은 곳에서는 3D 모델 테스트를 건너뜀
+ */
+const HAS_FORM = femaleForm() !== null;
+/** 계산으로 만든 몸 (손가락·허벅지 관 같은 부분 테스트) */
+const COMPUTED: BodyKind[] = HAS_FORM ? ['male'] : BODY_KINDS;
 
 /** 높이 y에 가장 가까운 단면의 둘레 */
 function girthAt(L: Loft, y: number): number {
@@ -24,6 +33,37 @@ function maxGirth(L: Loft, y0: number, y1: number): number {
   return g;
 }
 
+/** y0..y1 사이 가장 가는 둘레와 그 높이 */
+function minGirth(L: Loft, y0: number, y1: number): [number, number] {
+  let g = Infinity;
+  let at = y0;
+  L.y.forEach((v, i) => {
+    if (v >= y0 && v <= y1) {
+      const x = loftGirth(L, i);
+      if (x < g) {
+        g = x;
+        at = v;
+      }
+    }
+  });
+  return [g, at];
+}
+
+/** 어깨 너비의 반 (몸통 어깨와 팔 윗부분 중 가장 바깥) */
+function shoulderHalf(b: BodyModel, armpit: number): number {
+  let m = 0;
+  b.torso!.y.forEach((y) => {
+    if (y >= armpit - 2 && y <= armpit + 14) m = Math.max(m, loftReach(b.torso!, 0, y), loftReach(b.torso!, Math.PI, y));
+  });
+  for (const a of b.arms) {
+    for (const r of a.rings) {
+      const p = a.axis.at(r.t).p;
+      if (p[1] > armpit - 2) m = Math.max(m, Math.abs(p[0]) + r.rx);
+    }
+  }
+  return m;
+}
+
 function ellipsePerimeter(a: number, b: number) {
   return Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
 }
@@ -40,27 +80,31 @@ const ARMPIT = 45.5;
 
 describe('사람 모양 마네킹', () => {
   it('여자 몸: 허리가 가슴·엉덩이보다 가늘고, 치수가 실제 사람 비율', () => {
-    const L = emptyBody('female').torso!;
+    const b = emptyBody('female');
+    // 모델 파일을 받아 뒀으면 여자는 그 3D 모델 (천을 씌운 드레스폼처럼 그림)
+    expect(!!b.form).toBe(HAS_FORM);
+    const L = b.torso!;
     const bust = maxGirth(L, ARMPIT - 12, ARMPIT);
-    const waist = girthAt(L, ARMPIT - 25);
-    const hip = girthAt(L, ARMPIT - 43);
+    const [waist] = minGirth(L, ARMPIT - 30, ARMPIT - 8);
+    const hip = maxGirth(L, ARMPIT - 50, ARMPIT - 30);
     expect(bust).toBeGreaterThan(80);
     expect(bust).toBeLessThan(92);
-    expect(waist).toBeLessThan(bust * 0.85);
-    expect(waist).toBeLessThan(hip * 0.8);
+    expect(waist).toBeLessThan(bust * 0.75);
+    expect(waist).toBeLessThan(hip * 0.7);
     expect(hip).toBeGreaterThan(bust);
-    // 목은 통짜가 아니라 가늘게
-    expect(girthAt(L, ARMPIT + 17)).toBeLessThan(36);
+    // 목은 통짜가 아니라 가늘게 (목 밑동 조금 위)
+    expect(girthAt(L, b.neck.y + 2.5)).toBeLessThan(36);
   });
 
   it('남자 몸: 가슴이 엉덩이보다 넓고, 어깨가 여자보다 넓음', () => {
-    const m = emptyBody('male').torso!;
-    const f = emptyBody('female').torso!;
+    const mb = emptyBody('male');
+    const fb = emptyBody('female');
+    const m = mb.torso!;
+    const f = fb.torso!;
     expect(girthAt(m, ARMPIT - 7)).toBeGreaterThan(girthAt(m, ARMPIT - 45));
     expect(girthAt(m, ARMPIT - 7)).toBeGreaterThan(girthAt(f, ARMPIT - 7));
-    const half = (L: Loft, y: number) => Math.max(loftReach(L, 0, y), loftReach(L, Math.PI, y));
-    expect(half(m, ARMPIT + 9)).toBeGreaterThan(half(f, ARMPIT + 8.5) + 1);
-    expect(girthAt(m, ARMPIT + 17)).toBeLessThan(40);
+    expect(shoulderHalf(mb, ARMPIT)).toBeGreaterThan(shoulderHalf(fb, ARMPIT) + 1);
+    expect(girthAt(m, mb.neck.y + 2.5)).toBeLessThan(40);
   });
 
   it.each(BODY_KINDS)('머리와 목 (%s): 목은 턱 끝보다 뒤에서 올라가 턱 밑이 드러나고, 뒤통수가 목덜미 위로 나옴', (kind) => {
@@ -70,10 +114,12 @@ describe('사람 모양 마네킹', () => {
     const chin = H.y[0]!;
     const front = (L: Loft, y: number) => loftReach(L, Math.PI / 2, y);
     const back = (L: Loft, y: number) => -loftReach(L, -Math.PI / 2, y);
+    // 몸통(목)이 턱 아래에서 끝나는 3D 모델은 목 맨 윗단에서 잼
+    const neckTop = T.y[T.y.length - 1]! - 0.5;
     // 턱 끝 바로 위: 목 앞면(목젖 쪽)이 턱 앞면보다 3cm 넘게 뒤 (예전엔 목이 턱 앞까지 나와 턱과 붙어 보였음)
-    expect(front(H, chin + 2.2) - front(T, chin + 2.2)).toBeGreaterThan(3);
-    // 뒤통수(턱 끝 위 10cm)가 목덜미(턱 끝 위 4cm)보다 1.5cm 넘게 뒤로
-    expect(back(H, chin + 10)).toBeLessThan(back(T, chin + 4) - 1.5);
+    expect(front(H, chin + 2.2) - front(T, Math.min(chin + 2.2, neckTop))).toBeGreaterThan(3);
+    // 뒤통수(턱 끝 위 10cm)가 목덜미보다 1.5cm 넘게 뒤로
+    expect(back(H, chin + 10)).toBeLessThan(back(T, Math.min(chin + 4, neckTop)) - 1.5);
     // 머리 높이(턱 끝 ~ 정수리)는 사람 비율 (여자 22.5, 남자 23.5 근처)
     const height = b.top - chin;
     expect(height).toBeGreaterThan(21);
@@ -90,15 +136,48 @@ describe('사람 모양 마네킹', () => {
     const top = rings.slice(Math.floor(rings.length * 0.6));
     const garment = top.reduce((s, r) => s + ellipsePerimeter(r.rx, r.rz || r.rx * 0.76), 0) / top.length;
     const armpit = D.layout.topY + 1.5;
-    const chest = maxGirth(body.torso!, armpit - 13, armpit + 1);
+    const chest = maxGirth(body.torso!, armpit - 13, armpit - 0.5);
     expect(chest).toBeLessThan(garment);
     expect(chest).toBeGreaterThan(garment * 0.88);
-    // 소매를 따라 팔 두 개, 팔마다 손바닥과 엄지
+    // 소매를 따라 팔 두 개, 팔마다 손바닥과 엄지 (3D 모델은 손이 팔 끝에 붙어 있음)
     expect(body.arms.length).toBe(2);
-    expect(body.hands.length).toBe(4);
+    expect(body.hands.length).toBe(body.form ? 0 : 4);
   });
 
-  it.each(BODY_KINDS)('손 (%s): 납작한 손바닥, 엄지, 따로 떨어진 손가락 넷이 손바닥 아래로', (kind) => {
+  it.runIf(HAS_FORM)('옷 입힌 여자 3D 모델: 팔이 소매 축을 따라 어깨·팔꿈치에서 돌아감', () => {
+    const { D, body } = sweater('female');
+    expect(body.form).toBeTruthy();
+    for (const role of ['sleeveL', 'sleeveR'] as const) {
+      const sleeve = [...D.layout.roles].find(([, r]) => r === role)![0];
+      const axis = D.axes.get(sleeve)!;
+      const len = D.tubes.get(sleeve)!.length;
+      const arm = body.arms.find((a) => Math.sign(a.axis.at(a.rings[0]!.t).p[0]) === (role === 'sleeveL' ? -1 : 1))!;
+      // 손목 자리 (손끝에서 15cm 위)가 소매 축에서 4cm 안
+      const t0 = arm.rings[0]!.t;
+      const wrist = arm.axis.at(t0 + 15).p;
+      let d = Infinity;
+      for (let t = -20; t <= len; t += 0.5) {
+        const q = axis.at(t).p;
+        d = Math.min(d, Math.hypot(q[0] - wrist[0], q[1] - wrist[1], q[2] - wrist[2]));
+      }
+      expect(d).toBeLessThan(4);
+    }
+  });
+
+  it.runIf(HAS_FORM)('손 (여자 3D 모델): 팔이 손끝까지, 손은 납작', () => {
+    const b = emptyBody('female');
+    for (const a of b.arms) {
+      const tip = a.axis.at(a.rings[0]!.t).p;
+      const top = a.axis.at(a.rings[a.rings.length - 1]!.t).p;
+      // 겨드랑이에서 손끝까지 55cm 넘게 (손끝이 허벅지 중간)
+      expect(top[1] - tip[1]).toBeGreaterThan(50);
+      // 손 자리 단면은 앞뒤로 넓고 옆으로 납작
+      const hand = a.rings.find((r) => a.axis.at(r.t).p[1] < tip[1] + 8)!;
+      expect(hand.rz).toBeGreaterThan(hand.rx * 1.5);
+    }
+  });
+
+  it.each(COMPUTED)('손 (%s): 납작한 손바닥, 엄지, 따로 떨어진 손가락 넷이 손바닥 아래로', (kind) => {
     const b = emptyBody(kind);
     const palms = b.hands.filter((h) => (h.n ?? 2) > 2);
     const thumbs = b.hands.filter((h) => (h.n ?? 2) === 2);
@@ -125,9 +204,15 @@ describe('사람 모양 마네킹', () => {
   it.each(BODY_KINDS)('다리 (%s): 엉덩이 안에서 발목까지, 발은 바닥 판 위에', (kind) => {
     const b = emptyBody(kind);
     expect(b.limbs.length).toBe(2);
-    const feet = b.details.filter((d) => (d.n ?? 2) > 2);
-    expect(feet.length).toBe(2);
     const floor = b.base!.c[1] + b.base!.h / 2;
+    if (b.form) {
+      // 3D 모델: 발바닥(가장 낮은 꼭짓점)이 판에 닿음
+      let low = Infinity;
+      for (let i = 1; i < b.form.pos.length; i += 3) low = Math.min(low, b.form.pos[i]!);
+      expect(Math.abs(low - floor)).toBeLessThan(1);
+    }
+    const feet = b.details.filter((d) => (d.n ?? 2) > 2);
+    expect(feet.length).toBe(b.form ? 0 : 2);
     for (const f of feet) {
       // 발바닥이 판에 닿음 (1cm 안)
       let low = Infinity;
@@ -143,7 +228,7 @@ describe('사람 모양 마네킹', () => {
     expect(b.seams.length).toBeGreaterThan(6);
   });
 
-  it.each(BODY_KINDS)('허벅지 (%s): 윗끝이 엉덩이 옆으로 삐져나오지 않음', (kind) => {
+  it.each(COMPUTED)('허벅지 (%s): 윗끝이 엉덩이 옆으로 삐져나오지 않음', (kind) => {
     const b = emptyBody(kind);
     const L = b.torso!;
     for (const th of b.limbs) {

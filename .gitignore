@@ -6,3 +6,5 @@ data/
 .DS_Store
 coverage/
 apps/web/dist/
+# 마네킹 3D 모델 (라이선스상 재배포 금지 — pnpm form:fetch로 각자 받음)
+apps/web/src/sim/assets/*.bin

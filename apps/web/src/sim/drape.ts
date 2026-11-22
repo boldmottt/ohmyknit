@@ -322,6 +322,11 @@ export type DrapeOptions = {
    * 조각 자리가 정해진 뒤(요크를 만들기 전)에 불러요.
    */
   body?: (layout: Layout, tubes: Map<ArtPiece, Tube>, axes: Map<ArtPiece, Axis>) => { reach: Reach; neck: { y: number; rx: number; rz: number } } | null;
+  /**
+   * 소매를 앞뒤로 옮기는 거리 (cm, 뒤가 -). 3D 모델 마네킹은 어깨 관절이 몸 가운데보다 뒤에 있어서
+   * 소매 윗단을 팔이 나오는 자리에 맞춤
+   */
+  sleeveZ?: number;
 };
 
 const SEGS: Record<SimRole, number> = { body: 224, front: 112, back: 112, yoke: 200, sleeveL: 96, sleeveR: 96, hat: 160, panel: 64, extra: 0 };
@@ -337,6 +342,14 @@ export function drape(pieces: ArtPiece[], opts: DrapeOptions = {}): Draped {
   const axes = new Map<ArtPiece, Axis>();
   const find = (r: SimRole) => [...layout.roles].find(([, x]) => x === r)?.[0];
 
+  const dz = opts.sleeveZ ?? 0;
+  if (dz) {
+    for (const [p, role] of layout.roles) {
+      const pl = layout.place.get(p);
+      if (pl && (role === 'sleeveL' || role === 'sleeveR')) layout.place.set(p, { ...pl, origin: [pl.origin[0], pl.origin[1], pl.origin[2] + dz] });
+    }
+    if (layout.shoulder) layout.shoulder = [layout.shoulder[0], layout.shoulder[1], layout.shoulder[2] + dz];
+  }
   for (const [p, role] of layout.roles) {
     const raw = layout.tubes.get(p);
     const pl = layout.place.get(p);
