@@ -18,7 +18,7 @@
 git clone https://github.com/boldmottt/knitcloset.git   # 레포 이름을 바꾸기 전이면 ohmyknit
 cd knitcloset
 pnpm install
-pnpm test                 # 107개 테스트가 통과해야 해요
+pnpm test                 # 테스트가 모두 통과해야 해요 (마네킹 3D 모델을 받았는지에 따라 몇 개는 건너뜀)
 pnpm dev                  # 웹 빌드 → DB 마이그레이션 → 서버 (http://127.0.0.1:8787)
 ```
 
@@ -118,6 +118,25 @@ pnpm restore ~/…/knitcloset-20261114-030000.tar.gz   # 되돌리기 (먼저 �
 - 되돌리면 지금 데이터는 `data.before-restore-<시각>` 폴더로 옮겨 둬요
 
 서버를 끄려면: `launchctl bootout gui/$(id -u)/com.knitcloset.server` (다시 켜기: `./scripts/install-launchd.sh`)
+
+## 8-1. 마네킹 3D 모델 받기 (선택, 한 번)
+
+3D로 입혀 보기의 마네킹은 무료 공개 3D 모델에 천을 씌운 드레스폼이에요.
+여자는 Sketchfab “Free Female Mannequin Base Mesh”(작가 Devlane), 남자는 “Proxy Human base Mesh”(작가 sphere_joe, CC BY 4.0).
+여자 모델은 앱 안에서 쓰는 건 되지만 **파일 자체를 나눠 주면 안 되는 라이선스**라 GitHub에는 올리지 않았고,
+남자 모델도 같이 받게 맞췄어요. 맥에서 한 번만 받아 두면 돼요 (안 받으면 계산으로 만든 마네킹이 나와요).
+
+1. [sketchfab.com](https://sketchfab.com)에 무료로 가입 → 오른쪽 위 프로필 → **Settings → Password & API** → **API Token** 복사
+2. 터미널에서 (토큰 자리에 붙여 넣기):
+
+```bash
+SKETCHFAB_TOKEN=복사한_토큰 pnpm form:fetch
+pnpm build
+launchctl kickstart -k gui/$(id -u)/com.knitcloset.server   # 서버 다시 켜기
+```
+
+받은 파일은 `apps/web/src/sim/assets/form-female.bin`, `form-male.bin`에 저장되고 git에는 올라가지 않아요 (`git pull`로 지워지지 않음).
+예전에 여자만 받아 뒀다면 한 번 더 돌리면 남자도 받아져요.
 
 ## 9. 문제가 생기면
 

@@ -266,6 +266,55 @@ describe('프로젝트 수명주기', () => {
     expect(data.learned.kActualSt).toBeCloseTo(exp / 89, 4);
   });
 
+  it('완성 실측 오타(9.1, mm, 단면)는 학습에 쓰지 않고, 계수를 초기화할 수 있음', async () => {
+    const ids = await setup();
+    const { data: sw } = await call('POST', `/api/profiles/${ids.profileId}/swatches`, {
+      yarnWeight: 'dk', needleMm: 4, technique: 'stockinette', stsPost: 25, rowsPost: 33,
+    });
+    const finishWith = async (measured: Record<string, number>) => {
+      const { data: proj } = await call('POST', '/api/projects', {
+        ...ids, size: 'M', myGauge: { st: 25, row: 33 },
+        gaugeBasis: { swatchId: sw.id, swatchSt: 25, swatchRow: 33 },
+      });
+      return (await call('POST', `/api/projects/${proj.id}/finish`, { measured })).data;
+    };
+    const typo = await finishWith({ 가슴둘레: 9.1, 총장: 580 });
+    expect(typo.learned.ignored.map((x: any) => x.key).sort()).toEqual(['가슴둘레', '총장']);
+    expect(typo.learned.coefficient).toBeUndefined();
+    const half = await finishWith({ 가슴둘레: 45.5 });
+    expect(half.learned.ignored[0].key).toBe('가슴둘레');
+    // 오타만 넣었으니 추천은 스와치 그대로
+    const sug = (await call('GET', `/api/profiles/${ids.profileId}/suggest-gauge?patternSt=22&patternRow=30&technique=stockinette&yarnWeight=dk`)).data;
+    expect(sug).toMatchObject({ st: 25, row: 33 });
+
+    // 정상값은 학습, 그다음 초기화
+    const ok = await finishWith({ 가슴둘레: 89 });
+    expect(ok.learned.coefficient.kSt).toBeGreaterThan(1);
+    const del = await call('DELETE', `/api/profiles/${ids.profileId}/coefficients?technique=stockinette&yarnWeight=dk&needleMaterial=any`);
+    expect(del.status).toBe(200);
+    expect((await call('GET', `/api/profiles/${ids.profileId}/hands`)).data.coefficients).toEqual([]);
+  });
+
+  it('예전에 잘못 배운 계수가 있어도 추천은 범위 안으로', async () => {
+    const ids = await setup();
+    await call('POST', `/api/profiles/${ids.profileId}/swatches`, { yarnWeight: 'dk', needleMm: 4, technique: 'stockinette', stsPost: 25, rowsPost: 33 });
+    await env.DB.prepare(
+      "INSERT INTO hand_coefficients (profile_id, technique, yarn_weight, needle_material, k_st, k_row, sample_count, updated_at) VALUES (?, 'stockinette', 'dk', 'any', 22.85, 0.8, 9, 1)",
+    ).bind(ids.profileId).run();
+    const sug = (await call('GET', `/api/profiles/${ids.profileId}/suggest-gauge?patternSt=22&patternRow=30&technique=stockinette&yarnWeight=dk`)).data;
+    expect(sug.st).toBeCloseTo(25 * 1.33, 1);
+    expect(sug.row).toBeCloseTo(33 * 0.8, 1);
+  });
+
+  it('스와치 게이지는 10cm 안 1~80, 바늘은 0.5~30mm', async () => {
+    const { profileId } = await setup();
+    const add = (b: object) => call('POST', `/api/profiles/${profileId}/swatches`, { yarnWeight: 'dk', technique: 'stockinette', needleMm: 4, ...b });
+    expect((await add({ stsPost: -3, rowsPost: 30 })).status).toBe(400);
+    expect((await add({ stsPost: 1e9, rowsPost: 30 })).status).toBe(400);
+    expect((await add({ stsPost: 25, rowsPost: 33, needleMm: 40 })).status).toBe(400);
+    expect((await add({ stsPost: '25', rowsPost: '33' })).status).toBe(201);
+  });
+
   it('완성 실측으로 손 보정 계수 학습', async () => {
     const ids = await setup();
     const { data: sw } = await call('POST', `/api/profiles/${ids.profileId}/swatches`, {

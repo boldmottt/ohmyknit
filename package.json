@@ -10,6 +10,7 @@
     "start": "./scripts/start-server.sh",
     "backup": "node scripts/backup.mjs",
     "restore": "node scripts/restore.mjs",
+    "form:fetch": "node apps/web/scripts/form-fetch.mjs",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck"
   },
