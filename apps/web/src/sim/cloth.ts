@@ -33,7 +33,7 @@ export type ClothPanel = {
   orient: number;
 };
 
-export type Collider =
+export type Collider = (
   /** 세로축 둘레의 타원 고리들 (마네킹 몸통) */
   | { kind: 'lathe'; t: number[]; rx: number[]; rz: number[]; margin: number; friction: number }
   /** 굵기가 변하는 관 (팔, 목) */
@@ -41,7 +41,11 @@ export type Collider =
   /** 타원체 (머리) */
   | { kind: 'ellipsoid'; c: Vec3; r: Vec3; margin: number; friction: number }
   /** 높이마다 각도별 반지름을 가진 단면 쌓기 (사람 몸통·머리). r은 단면 × A */
-  | { kind: 'loft'; y: number[]; cx: number[]; cz: number[]; A: number; r: number[]; margin: number; friction: number };
+  | { kind: 'loft'; y: number[]; cx: number[]; cz: number[]; A: number; r: number[]; margin: number; friction: number }
+) & {
+  /** 이 부딪힘을 건너뛰는 조각 번호 (panels 순서) */
+  skip?: number[];
+};
 
 /** 솔기: 전체 입자 번호 두 개 */
 export type Seam = [number, number];
@@ -533,10 +537,11 @@ function pushOut(c: Prepared, x: number, y: number, z: number, out: Float64Array
  * 길이 제약이 나중에 다시 끌어당겨서, 옷이 몸에 걸쳐 감싸게 돼요.
  */
 export function separate(panels: ClothPanel[], colliders: Collider[], extra = 0.35, passes = 3) {
-  const prep = colliders.map((c) => prepare({ ...c, margin: c.margin + extra }));
+  const all = colliders.map((c) => prepare({ ...c, margin: c.margin + extra }));
   const out = new Float64Array(3);
   const nrm = new Float64Array(3);
-  for (const p of panels) {
+  for (const [pi, p] of panels.entries()) {
+    const prep = all.filter((_, ci) => !colliders[ci]!.skip?.includes(pi));
     const n = p.cols * p.rings;
     for (let i = 0; i < n; i++) {
       let x = p.pos[i * 3]!;
@@ -616,6 +621,13 @@ export function simulate(input: ClothInput): ClothOutput {
   });
   const colliders = input.colliders.map(prepare);
   const hints = colliders.map(() => new Int32Array(N).fill(-1));
+  // 조각마다 건너뛰는 부딪힘 (입자 번호로 펼침)
+  const skip = input.colliders.map((c) => {
+    if (!c.skip?.length) return null;
+    const m = new Uint8Array(N);
+    for (const pi of c.skip) if (panels[pi]) m.fill(1, offsets[pi]!, offsets[pi]! + panels[pi]!.cols * panels[pi]!.rings);
+    return m;
+  });
   const out = new Float64Array(3);
   const nrm = new Float64Array(3);
   // 마지막으로 닿은 마네킹과 그 자리의 법선: 부딪힘은 두 단계에 한 번 재지만 마찰은 매 단계 걸어요
@@ -698,6 +710,7 @@ export function simulate(input: ClothInput): ClothOutput {
       touch[i] = -1;
       for (let ci = 0; ci < colliders.length; ci++) {
         const col = colliders[ci]!;
+        if (skip[ci]?.[i]) continue;
         if (!pushOut(col, x[i3]!, x[i3 + 1]!, x[i3 + 2]!, out, nrm, hints[ci], i)) continue;
         const ox = prev[i3]!;
         const oy = prev[i3 + 1]!;

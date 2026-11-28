@@ -3,6 +3,7 @@ import { convertPattern } from '@knitcloset/gauge-engine';
 import { parsePattern, SAMPLE_BEANIE, SAMPLE_PATTERN } from '@knitcloset/pattern-schema';
 import { simulate, type ClothPanel } from './cloth';
 import { gridSheet, planCloth, RIB_REST, shapeKey } from './drapeSim';
+import { FLAT_PATTERN } from './testPatterns';
 
 const ringY = (pos: Float32Array, p: ClothPanel, i: number) => {
   let s = 0;
@@ -70,6 +71,28 @@ describe('천 시뮬레이션', () => {
     if (kind === 'male') expect(hem).toBeLessThan(mid * 0.95);
     else expect(hem).toBeLessThan(mid * 1.12);
   }, 30000);
+
+  it.each(['female', 'male'] as const)('어깨까지 뜨는 앞판·뒤판 (%s): 어깨에 걸려 밑단이 제자리에 늘어짐 (목으로 말려 올라가지 않음)', (kind) => {
+    const g = { st: 22, row: 30 };
+    const conv = convertPattern(parsePattern(FLAT_PATTERN), { size: 'M', myGauge: g });
+    const pieces = conv.pieces.map((piece) => ({ piece, completedRows: 0, gauge: g }));
+    const plan = planCloth(pieces, kind)!;
+    const front = plan.input.panels.findIndex((p) => p.id === 'front');
+    const back = plan.input.panels.findIndex((p) => p.id === 'back');
+    // 앞판·뒤판은 고정하지 않고(어깨 끝·진동·옆선으로 꿰맴), 몸 옆에 내린 팔과는 부딪히지 않음
+    expect(plan.input.panels[front]!.pin ?? []).toEqual([]);
+    expect(plan.input.panels[back]!.pin ?? []).toEqual([]);
+    expect(plan.input.colliders.some((c) => c.skip?.includes(front) && c.skip.includes(back))).toBe(true);
+    const out = simulate({ ...plan.input, params: { frames: 60 } });
+    expect(out.ok).toBe(true);
+    for (const i of [front, back]) {
+      const p = plan.input.panels[i]!;
+      // 밑단은 거의 제자리 (전에는 팔에 밀린 옆선을 따라 20cm 넘게 말려 올라가 옷이 목에 뭉쳤음)
+      expect(ringY(out.pos[i]!, p, 0) - ringY(p.pos, p, 0)).toBeLessThan(5);
+      // 어깨선도 흘러내리지 않음
+      expect(Math.abs(ringY(out.pos[i]!, p, p.rings - 1) - ringY(p.pos, p, p.rings - 1))).toBeLessThan(5);
+    }
+  });
 
   it('비니는 머리에 씌운 채로 있음 (위로 빠지지 않음)', () => {
     const conv = convertPattern(parsePattern(SAMPLE_BEANIE), { size: '성인', myGauge: { st: 22, row: 30 } });

@@ -1843,8 +1843,10 @@ export function bodyFor(kind: BodyKind, L: Layout, tubes: Map<ArtPiece, Tube>, a
   const tube = main ? tubes.get(main) : undefined;
   let chest = specChest(kind) * 1.06;
   if (tube) {
-    // 윗부분(겨드랑이 쪽 30%) 둘레의 평균
-    const sorted = [...tube.rings].sort((a, b) => a.t - b.t);
+    // 겨드랑이 아래 몸판 윗부분(40%) 둘레의 평균 — 어깨까지 뜨는 앞판은 진동·목 줄임으로 좁아진 윗부분을 빼고 잼
+    const all = [...tube.rings].sort((a, b) => a.t - b.t);
+    const below = all.filter((r) => r.t <= L.topY + 1e-6);
+    const sorted = below.length > 0 ? below : all;
     const top = sorted.slice(Math.floor(sorted.length * 0.6));
     chest = top.reduce((s, r) => s + ellipsePerimeter(r.rx, r.rz || r.rx * 0.76), 0) / Math.max(1, top.length);
   }

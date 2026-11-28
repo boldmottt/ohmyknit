@@ -6,6 +6,7 @@ import { readBody, writeBody } from './bodyPref';
 import { separate, type ClothPanel } from './cloth';
 import { bodyColliders, bodyOfDraped, drapeFor } from './drapeSim';
 import { formFor } from './formMesh';
+import { FLAT_PATTERN } from './testPatterns';
 
 /**
  * 마네킹 3D 모델 파일(pnpm form:fetch로 받음)이 있는 몸은 그 모델, 없으면 계산으로 만든 몸.
@@ -143,6 +144,33 @@ describe('사람 모양 마네킹', () => {
     // 소매를 따라 팔 두 개, 팔마다 손바닥과 엄지 (3D 모델은 손이 팔 끝에 붙어 있음)
     expect(body.arms.length).toBe(2);
     expect(body.hands.length).toBe(body.form ? 0 : 4);
+  });
+
+  it.each(BODY_KINDS)('어깨까지 뜨는 앞판·뒤판 옷 (%s): 겨드랑이 아래 가슴둘레로 몸 크기, 옷 어깨선은 몸 어깨에', (kind) => {
+    const g = { st: 22, row: 30 };
+    const conv = convertPattern(parsePattern(FLAT_PATTERN), { size: 'M', myGauge: g });
+    const pieces = conv.pieces.map((piece) => ({ piece, completedRows: 0, gauge: g }));
+    const D = drapeFor(pieces, kind);
+    const body = bodyOfDraped(D, kind)!;
+    // 진동 전 앞판 + 뒤판 너비 (100코씩). 좁아진 진동·목 쪽으로 재면 몸이 0.7배쯤으로 작아졌음
+    const garment = 2 * (100 / 22) * 10;
+    const armpit = D.layout.topY + 1.5;
+    const chest = maxGirth(body.torso!, armpit - 13, armpit - 0.5);
+    expect(chest).toBeLessThan(garment);
+    expect(chest).toBeGreaterThan(garment * 0.88);
+    // 옷 맨 윗단(어깨선)은 몸 겨드랑이보다 진동 깊이만큼 위 = 어깨 높이 (전에는 겨드랑이에 걸려 옷이 13cm 내려갔음)
+    const front = [...D.layout.roles].find(([, r]) => r === 'front')![0];
+    const shoulderLine = D.tubes.get(front)!.length;
+    expect(shoulderLine - armpit).toBeGreaterThan(10);
+    expect(shoulderLine - armpit).toBeLessThan(18);
+    // 소매 윗단은 팔 윗머리(어깨 관절) 근처
+    for (const role of ['sleeveL', 'sleeveR'] as const) {
+      const sleeve = [...D.layout.roles].find(([, r]) => r === role)![0];
+      const top = D.axes.get(sleeve)!.at(D.tubes.get(sleeve)!.length).p;
+      const arm = body.arms.reduce((a, b) => (Math.abs(b.axis.at(b.rings[b.rings.length - 1]!.t).p[0] - top[0]) < Math.abs(a.axis.at(a.rings[a.rings.length - 1]!.t).p[0] - top[0]) ? b : a));
+      const j = arm.axis.at(arm.rings[arm.rings.length - 1]!.t).p;
+      expect(Math.hypot(top[0] - j[0], top[1] - j[1], top[2] - j[2])).toBeLessThan(6);
+    }
   });
 
   for (const kind of BODY_KINDS) it.runIf(HAS[kind])(`옷 입힌 3D 모델 (${kind}): 팔이 소매 축을 따라 어깨·팔꿈치에서 돌아감`, () => {

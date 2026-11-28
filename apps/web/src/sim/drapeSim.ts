@@ -205,11 +205,12 @@ function colEdge(p: ClothPanel, col: number) {
 }
 
 /** 마네킹을 부딪힘 모양으로: 몸통·머리는 단면 쌓기, 팔·허벅지·받침 목은 굵기가 변하는 관 */
-export function bodyColliders(b: BodyModel, hat: boolean): Collider[] {
+export function bodyColliders(b: BodyModel, hat: boolean, armSkip: number[] = []): Collider[] {
   const out: Collider[] = [];
   if (b.torso) out.push({ kind: 'loft', y: b.torso.y, cx: b.torso.cx, cz: b.torso.cz, A: b.torso.A, r: b.torso.r, margin: 0.45, friction: 0.7 });
   out.push({ kind: 'loft', y: b.head.y, cx: b.head.cx, cz: b.head.cz, A: b.head.A, r: b.head.r, margin: hat ? 0.35 : 0.4, friction: hat ? 0.95 : 0.6 });
-  for (const limb of [...b.arms, ...b.hands, ...b.limbs]) out.push(...limbColliders(limb, hat ? 0.3 : 0.4, 0.5));
+  for (const limb of [...b.arms, ...b.hands]) out.push(...limbColliders(limb, hat ? 0.3 : 0.4, 0.5).map((c) => (armSkip.length ? { ...c, skip: armSkip } : c)));
+  for (const limb of b.limbs) out.push(...limbColliders(limb, hat ? 0.3 : 0.4, 0.5));
   return out;
 }
 
@@ -271,8 +272,11 @@ export function planCloth(pieces: ArtPiece[], kind: BodyKind = 'female'): ClothP
   for (const [p, sheet] of D.sheets) {
     const role = roles.get(p)!;
     if (role === 'extra' || sheet.rows === 0) continue;
+    const neck = D.layout.necks?.get(p);
+    // 목 파임 뒤의 단은 그 전 너비 (목에서 막은 코는 구멍)
+    const widthRow = (k: number) => (neck === undefined ? k : p.piece.direction === 'top_down' ? Math.max(k, neck) : Math.min(k, neck));
     const panel = sampleSheet(p.piece.id, sheet, {
-      width: (k) => patternWidth(p, k),
+      width: (k) => patternWidth(p, widthRow(k)),
       rowHeight: 10 / p.gauge.row,
       cinch: (k, span) => 1 - (1 - RIB_REST) * ribAt(p, k, span),
     });
@@ -290,6 +294,8 @@ export function planCloth(pieces: ArtPiece[], kind: BodyKind = 'female'): ClothP
   const seams: Seam[] = [];
   const yokeIdx = owners.findIndex((o) => (o === 'impliedYoke' ? true : roles.get(o) === 'yoke'));
   const isTopPiece = (o: Owner) => o !== 'impliedYoke' && ['body', 'front', 'back', 'sleeveL', 'sleeveR'].includes(roles.get(o)!);
+  // 어깨까지 뜨는 앞판·뒤판 (겨드랑이 위로 진동·어깨가 이어짐)
+  const toShoulder = (o: Owner) => o !== 'impliedYoke' && ['front', 'back'].includes(roles.get(o)!) && (D.tubes.get(o)?.length ?? 0) > D.layout.topY + 3;
   if (yokeIdx >= 0) {
     const y = panels[yokeIdx]!;
     const yb = ringEdge(y, bottomRing(y));
@@ -344,21 +350,62 @@ export function planCloth(pieces: ArtPiece[], kind: BodyKind = 'female'): ClothP
       if (best && bd < 6) seams.push([q.gi, best.gi]);
     }
   } else if (!D.layout.isHat) {
-    // 잡아 줄 요크가 없으면 윗단을 그 자리에 고정 (옷걸이에 걸린 것처럼)
+    // 잡아 줄 요크가 없으면 윗단을 그 자리에 고정 (옷걸이에 걸린 것처럼).
+    // 어깨까지 뜨는 앞판·뒤판은 고정하지 않고 어깨 끝끼리 꿰매서(아래) 어깨에 걸리게
     panels.forEach((p, i) => {
-      if (isTopPiece(owners[i]!)) p.pin = [topRing(p)];
+      if (isTopPiece(owners[i]!) && !toShoulder(owners[i]!)) p.pin = [topRing(p)];
     });
   }
-  // 앞판·뒤판 옆선
+  // 앞판·뒤판 옆선. 어깨까지 뜨는 판은 겨드랑이 아래만 꿰매고(위는 팔이 나오는 진동), 윗단은 어깨 끝(바깥 3cm)끼리 꿰맴.
+  // (진동까지 옆선을 꿰매면 좁아진 윗부분이 닫힌 통이 되어 어깨를 못 지나고 목으로 올라가며 옷 전체를 끌어 올렸음)
   const fi = owners.findIndex((o) => o !== 'impliedYoke' && roles.get(o) === 'front');
   const bi = owners.findIndex((o) => o !== 'impliedYoke' && roles.get(o) === 'back');
   if (fi >= 0 && bi >= 0) {
     const f = panels[fi]!;
     const b = panels[bi]!;
-    seams.push(...stitchEdges({ off: offsets[fi]!, ...colEdge(f, f.cols - 1) }, { off: offsets[bi]!, ...colEdge(b, 0) }, 4));
-    seams.push(...stitchEdges({ off: offsets[fi]!, ...colEdge(f, 0) }, { off: offsets[bi]!, ...colEdge(b, b.cols - 1) }, 4));
+    const shoulder = toShoulder(owners[fi]!) && toShoulder(owners[bi]!);
+    const below = (e: { pts: Vec3[]; idx: number[] }) => {
+      if (!shoulder) return e;
+      const keep = e.pts.map((p, i) => i).filter((i) => e.pts[i]![1] <= D.layout.topY + 0.5);
+      return { pts: keep.map((i) => e.pts[i]!), idx: keep.map((i) => e.idx[i]!) };
+    };
+    seams.push(...stitchEdges({ off: offsets[fi]!, ...below(colEdge(f, f.cols - 1)) }, { off: offsets[bi]!, ...below(colEdge(b, 0)) }, 4));
+    seams.push(...stitchEdges({ off: offsets[fi]!, ...below(colEdge(f, 0)) }, { off: offsets[bi]!, ...below(colEdge(b, b.cols - 1)) }, 4));
+    if (shoulder) {
+      // 윗단 바깥 끝: 앞판 0열(왼쪽) ↔ 뒤판 마지막 열(왼쪽), 앞판 마지막 열(오른쪽) ↔ 뒤판 0열(오른쪽)
+      const ends = (p: ClothPanel, fromStart: boolean) => {
+        const ring = topRing(p);
+        const e = ringEdge(p, ring);
+        const m = Math.max(2, Math.round(3 / Math.max(0.1, p.restU[ring]!)) + 1);
+        const pick = fromStart ? e.idx.slice(0, m) : e.idx.slice(-m);
+        const pts = fromStart ? e.pts.slice(0, m) : e.pts.slice(-m);
+        return { pts, idx: pick };
+      };
+      seams.push(...stitchEdges({ off: offsets[fi]!, ...ends(f, true) }, { off: offsets[bi]!, ...ends(b, false) }, 8));
+      seams.push(...stitchEdges({ off: offsets[fi]!, ...ends(f, false) }, { off: offsets[bi]!, ...ends(b, true) }, 8));
+      // 소매 달기: 진동 가장자리(겨드랑이 1cm 아래부터)를 소매 윗단에 꿰맴 (왼쪽: 앞판 0열·뒤판 마지막 열, 오른쪽: 반대).
+      // 팔이 몸 옆에 내려와 겨드랑이 아래 옆선과 겹치는데, 소매가 진동을 잡지 않으면 팔 관에 밀린 옆선을 따라 옷이 타고 올라갔음
+      const armhole = (e: { pts: Vec3[]; idx: number[] }) => {
+        const keep = e.pts.map((p, i) => i).filter((i) => e.pts[i]![1] >= D.layout.topY - 1);
+        return { pts: keep.map((i) => e.pts[i]!), idx: keep.map((i) => e.idx[i]!) };
+      };
+      for (const [role, fc, bc] of [
+        ['sleeveL', 0, b.cols - 1],
+        ['sleeveR', f.cols - 1, 0],
+      ] as const) {
+        const si = owners.findIndex((o) => o !== 'impliedYoke' && roles.get(o) === role);
+        if (si < 0) continue;
+        const sp = panels[si]!;
+        const ring = { off: offsets[si]!, ...ringEdge(sp, topRing(sp)) };
+        seams.push(...stitchEdges({ off: offsets[fi]!, ...armhole(colEdge(f, fc)) }, ring, 6));
+        seams.push(...stitchEdges({ off: offsets[bi]!, ...armhole(colEdge(b, bc)) }, ring, 6));
+      }
+    }
   }
-  const cols = bodyColliders(body, D.layout.isHat);
+  // 어깨까지 뜨는 앞판·뒤판은 팔과 부딪히지 않음: 몸 옆에 내린 팔이 겨드랑이 아래 옆선 자리와 겹쳐서(옷 가슴 여유만큼),
+  // 팔에 밀린 옆선이 팔 바깥으로 빠져나가 팔을 타고 올라가며 옷 전체를 끌어 올렸음. 실제로도 팔이 옷 옆을 몸에 눌러요
+  const armSkip = fi >= 0 && bi >= 0 && toShoulder(owners[fi]!) && toShoulder(owners[bi]!) ? [fi, bi] : [];
+  const cols = bodyColliders(body, D.layout.isHat, armSkip);
   // 몸이 옷보다 나온 곳(가슴·어깨·엉덩이)은 출발 모양을 몸 밖으로 밀어 둠
   separate(panels, cols);
   return { key: shapeKey(pieces, kind), input: { panels, seams, colliders: cols, seed: 11 }, owners, rows };
@@ -521,7 +568,7 @@ export function clothDraped(pieces: ArtPiece[], kind: BodyKind = 'female'): Drap
 }
 
 /** 계산 방식이 바뀌면 올려서 예전에 저장한 모양을 쓰지 않게 */
-const CLOTH_VERSION = 14;
+const CLOTH_VERSION = 15;
 
 /** 늘어뜨린 모양을 계산해 둠 (이미 했거나 하는 중이면 그대로). 한 번 계산한 모양은 기기에 저장 */
 export function ensureCloth(pieces: ArtPiece[], kind: BodyKind = 'female'): Promise<boolean> {
