@@ -116,6 +116,76 @@ export function tubeOf(p: ArtPiece, role: SimRole): Tube {
   return { kind, rings, length };
 }
 
+/** 높이 t에서의 고리 (사이는 선형으로) */
+function ringAtT(rings: Ring[], t: number): Ring {
+  const rs = [...rings].sort((a, b) => a.t - b.t);
+  if (t <= rs[0]!.t) return rs[0]!;
+  for (let i = 1; i < rs.length; i++) {
+    const a = rs[i - 1]!;
+    const b = rs[i]!;
+    if (t > b.t) continue;
+    const f = b.t > a.t ? (t - a.t) / (b.t - a.t) : 0;
+    return { t, rx: a.rx + (b.rx - a.rx) * f, rz: a.rz + (b.rz - a.rz) * f };
+  }
+  return rs[rs.length - 1]!;
+}
+
+/**
+ * 몸판의 겨드랑이 높이 (cm, 아래 끝에서).
+ * - 진동 시작: 위로 가다가 너비가 4cm 안에 7% 넘게 줄고 다시 넓어지지 않는 곳 (진동 코막음·줄임,
+ *   래글런 겨드랑이 코막음). 그런 곳이 여럿이면(목 파임, 페플럼 허리) 조각 아래 45%보다 위이고
+ *   그 위로 진동 깊이만큼(조각의 20%, 길면 9cm) 이어지는 것 중 가장 낮은 것
+ * - 진동 줄임 없이 어깨까지 곧게 뜨는 앞판·뒤판(드롭숄더)은 어깨선에서 보통 진동 깊이만큼 아래
+ *   (가슴둘레의 15.5%: 가슴 91cm → 14cm)
+ * - 그 밖(겨드랑이까지만 뜨는 요크 스웨터 몸판 등)은 윗단
+ */
+export function underarmOf(tube: Tube, flatToShoulder = false): number {
+  const rs = [...tube.rings].sort((a, b) => a.t - b.t);
+  const n = rs.length;
+  const top = tube.length;
+  if (n < 3 || top <= 0) return top;
+  const above = new Array<number>(n);
+  above[n - 1] = rs[n - 1]!.rx;
+  for (let i = n - 2; i >= 0; i--) above[i] = Math.max(above[i + 1]!, rs[i]!.rx);
+  const depth = Math.max(4, Math.min(top * 0.2, 9));
+  for (let i = 1; i < n; i++) {
+    // 바로 아래 4cm 안에서 가장 넓은 곳
+    let j = i;
+    for (let q = i - 1; q >= 0 && rs[i]!.t - rs[q]!.t <= 4; q--) if (rs[q]!.rx > rs[j]!.rx) j = q;
+    const wide = rs[j]!.rx;
+    if (rs[i]!.rx > wide * 0.93 || above[i]! > wide * 0.97) continue;
+    const start = rs[j]!.t;
+    if (start >= top * 0.45 && top - start >= depth) return start;
+  }
+  if (!flatToShoulder) return top;
+  const widest = rs.reduce((a, b) => (b.rx > a.rx ? b : a));
+  const a = widest.rx;
+  const b = widest.rz || widest.rx * 0.76;
+  const chest = Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
+  return Math.max(top * 0.5, top - chest * 0.155);
+}
+
+/**
+ * 어깨까지 뜨는 판의 목 파임이 시작하는 높이: 진동 줄임(겨드랑이 위 2cm) 위에서 다시 4cm 안에 7% 넘게 좁아지고
+ * 다시 넓어지지 않는 곳 중 가장 낮은 것. 없으면 null
+ */
+export function necklineOf(tube: Tube, underarm: number): number | null {
+  const rs = [...tube.rings].sort((a, b) => a.t - b.t);
+  const n = rs.length;
+  const above = new Array<number>(n);
+  above[n - 1] = rs[n - 1]!.rx;
+  for (let i = n - 2; i >= 0; i--) above[i] = Math.max(above[i + 1]!, rs[i]!.rx);
+  for (let i = 1; i < n; i++) {
+    if (rs[i]!.t <= underarm + 2) continue;
+    let j = i;
+    for (let q = i - 1; q >= 0 && rs[i]!.t - rs[q]!.t <= 4 && rs[q]!.t > underarm + 2; q--) if (rs[q]!.rx > rs[j]!.rx) j = q;
+    const wide = rs[j]!.rx;
+    if (rs[i]!.rx > wide * 0.93 || above[i]! > wide * 0.97) continue;
+    return rs[j]!.t;
+  }
+  return null;
+}
+
 /** 조각을 놓는 자리: t = 0 끝의 위치(cm)와 z축 기울기(라디안, 축이 위를 향하는 데서) */
 export type Placement = { origin: [number, number, number]; tilt: number };
 
@@ -136,6 +206,8 @@ export type Layout = {
   isHat: boolean;
   /** 모자를 씌운 머리 (가로·세로·앞뒤 반지름, 중심 높이) */
   head: { rh: number; rv: number; rz: number; cy: number } | null;
+  /** 어깨까지 뜨는 앞판·뒤판의 목 파임이 시작하는 단 경계 k (이 뒤의 단은 이 단 너비로 봄) */
+  necks?: Map<ArtPiece, number>;
 };
 
 /**
@@ -194,10 +266,30 @@ export function layoutOf(pieces: ArtPiece[]): Layout {
   let topRz = 6;
   if (body && !isHat) {
     const t = tubes.get(body)!;
-    const top = t.rings.reduce((a, b) => (b.t > a.t ? b : a));
-    topY = t.length;
+    // 겨드랑이: 요크 스웨터처럼 겨드랑이까지만 뜨는 몸판은 윗단, 어깨까지 뜨는 앞판·뒤판은 진동이 시작하는 곳
+    // (요크 조각이 따로 있으면 앞판·뒤판도 겨드랑이까지만 뜸)
+    topY = underarmOf(t, roles.get(body) === 'front' && !find('yoke'));
+    const top = ringAtT(t.rings, topY);
     topRx = top.rx;
     topRz = top.rz || top.rx * 0.76;
+  }
+  // 어깨까지 뜨는 앞판·뒤판의 목 파임: 목에서 코막음·줄임한 코는 너비가 준 게 아니라 구멍이라,
+  // 목 파임이 시작한 뒤의 단도 그 전 너비로 둠 (줄어든 너비로 두면 짧아진 윗단이 어깨 끝과 끝을 목 쪽으로 끌어당겨
+  // 옷 전체가 목에 뭉쳐 올라갔음)
+  const necks = new Map<ArtPiece, number>();
+  for (const [p, r] of roles) {
+    if (isHat || (r !== 'front' && r !== 'back')) continue;
+    const t = tubes.get(p)!;
+    if (t.length <= topY + 3) continue;
+    const start = necklineOf(t, topY);
+    if (start === null) continue;
+    const keep = ringAtT(t.rings, start);
+    let k = 0;
+    t.rings.forEach((ring, i) => {
+      if (Math.abs(ring.t - start) < Math.abs(t.rings[k]!.t - start)) k = i;
+    });
+    necks.set(p, k);
+    tubes.set(p, { ...t, rings: t.rings.map((ring) => (ring.t > start ? { ...ring, rx: keep.rx, rz: keep.rz } : ring)) });
   }
   for (const [p, r] of roles) {
     if (r === 'body' || r === 'front' || r === 'back' || r === 'hat' || r === 'panel') place.set(p, { origin: [0, 0, 0], tilt: 0 });
@@ -220,7 +312,7 @@ export function layoutOf(pieces: ArtPiece[]): Layout {
     place.set(s, { origin: [anchor[0] - dir[0]! * t.length, anchor[1] - dir[1]! * t.length, 0], tilt });
     if (!shoulder && side === 'sleeveR') shoulder = [-anchor[0], anchor[1], 0];
   }
-  return { roles, tubes, place, topY, topRx, topRz, shoulder, isHat, head };
+  return { roles, tubes, place, topY, topRx, topRz, shoulder, isHat, head, necks };
 }
 
 /**

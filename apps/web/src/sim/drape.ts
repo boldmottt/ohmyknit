@@ -244,6 +244,22 @@ export type YokeShape = {
 /** 요크가 몸에 얹히는 높이 y, 방향 theta에서 몸 겉면까지의 거리 */
 type Reach = (theta: number, y: number) => number;
 
+/** 면이 몸 겉면(+0.8cm) 안으로 들어간 곳은 가운데 축에서 바깥으로 밀어 냄 */
+function outsideBody(sheet: Sheet, reach: Reach): Sheet {
+  return {
+    ...sheet,
+    at(u, k) {
+      const p = sheet.at(u, k);
+      const d = Math.hypot(p[0], p[2]);
+      if (d < 1e-6) return p;
+      const need = reach(Math.atan2(p[2], p[0]), p[1]);
+      if (need <= 0 || d >= need + 0.8) return p;
+      const s = (need + 0.8) / d;
+      return [p[0] * s, p[1], p[2] * s];
+    },
+  };
+}
+
 function yokeSheet(base: Vec3[], shape: YokeShape, reach: Reach): Sheet {
   const env = envelope(base);
   const sample = (arr: number[], theta: number) => {
@@ -366,6 +382,14 @@ export function drape(pieces: ArtPiece[], opts: DrapeOptions = {}): Draped {
     } else {
       sheets.set(p, tubeSheet(tube, role, pl.origin, SEGS[role], wr));
     }
+  }
+
+  // 앞판·뒤판은 몸 겉면 바깥에 (어깨까지 뜨는 판은 진동·목 줄임으로 좁아진 윗부분이 어깨 속에 묻히고,
+  // 가슴이 판을 뚫고 나옴 — 천 시뮬레이션도 이 모양에서 출발)
+  const flat = [find('front'), find('back')].filter((p): p is ArtPiece => !!p);
+  if (flat.length > 0) {
+    const fit = opts.body?.(layout, tubes, axes) ?? null;
+    if (fit) for (const p of flat) sheets.set(p, outsideBody(sheets.get(p)!, fit.reach));
   }
 
   // 요크: 원통 몸판 위, 소매 윗단까지 감싸서 목으로

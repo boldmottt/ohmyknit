@@ -152,6 +152,7 @@ describe('뜬 만큼 보이는 옷 (조립 그림 재료)', () => {
 });
 
 import { ARM_ANGLE, layoutOf, simRoles, tubeOf } from './sim/shape';
+import { FLAT_PATTERN } from './sim/testPatterns';
 
 describe('패턴판 → 3D 조립 모양', () => {
   const ap = (piece: (typeof converted.pieces)[number], completedRows = 0) => ({ piece, completedRows, gauge: { st: 25, row: 33 } });
@@ -198,6 +199,64 @@ describe('패턴판 → 3D 조립 모양', () => {
     expect(pl.origin[0]).toBeLessThan(top[0]!);
     expect(top[0]!).toBeLessThan(-L.topRx);
     expect(top[1]!).toBeGreaterThan(L.topY);
+  });
+
+  it('어깨까지 뜨는 앞판·뒤판: 겨드랑이는 진동이 시작하는 높이, 소매는 그 가슴 바깥에', () => {
+    const g = { st: 22, row: 30 };
+    const flat = convertPattern(parsePattern(FLAT_PATTERN), { size: 'M', myGauge: g });
+    const pieces = flat.pieces.map((piece) => ({ piece, completedRows: 0, gauge: g }));
+    const L = layoutOf(pieces);
+    expect(pieces.map((p) => L.roles.get(p))).toEqual(['front', 'back', 'sleeveL', 'sleeveR', 'extra', 'extra']);
+    const front = L.tubes.get(pieces[0]!)!;
+    // 진동 코막음은 87단: 겨드랑이는 그 바로 아래 (늘림·줄임 계단을 앞뒤 2단씩 편 만큼 3단까지 아래). 앞목 파임(111단)이 아님
+    expect(L.topY).toBeGreaterThanOrEqual(front.rings[84]!.t);
+    expect(L.topY).toBeLessThanOrEqual(front.rings[87]!.t);
+    expect(front.length - L.topY).toBeGreaterThan(12);
+    // 겨드랑이 높이의 가슴둘레 = 진동 전 앞판 + 뒤판 너비 (100코씩)
+    const a = L.topRx;
+    const b = L.topRz;
+    const perim = Math.PI * (3 * (a + b) - Math.sqrt((3 * a + b) * (a + 3 * b)));
+    expect(Math.abs(perim - 2 * (100 / 22) * 10)).toBeLessThan(2);
+    // 소매 윗단은 가슴 바깥, 겨드랑이 조금 위
+    const pl = L.place.get(pieces[2]!)!;
+    const tl = L.tubes.get(pieces[2]!)!;
+    const top = [pl.origin[0] - Math.sin(pl.tilt) * tl.length, pl.origin[1] + Math.cos(pl.tilt) * tl.length];
+    expect(top[0]!).toBeLessThan(-L.topRx);
+    expect(top[1]!).toBeGreaterThan(L.topY);
+    expect(top[1]!).toBeLessThan(L.topY + 8);
+  });
+
+  it('겨드랑이 찾기: 요크 스웨터 몸판은 윗단, 진동 줄임 없는 앞판(드롭숄더)은 어깨선에서 진동 깊이만큼 아래, 천천히 좁아지는 몸판은 윗단', () => {
+    const L = layoutOf(sweaterPieces);
+    expect(L.topY).toBeCloseTo(L.tubes.get(sweaterPieces[0]!)!.length, 6);
+    const g = { st: 22, row: 30 };
+    const base = parsePattern(FLAT_PATTERN);
+    // 진동 줄임 없이 어깨까지 곧은 앞판·뒤판 (132단 = 44cm)
+    const straight = base.pieces.map((p) =>
+      p.id === 'front' || p.id === 'back'
+        ? { ...p, sections: [p.sections[0]!, { ...p.sections[1]!, rows: { M: 124 }, shaping: [], events: [] }] }
+        : p,
+    );
+    const ds = convertPattern({ ...base, pieces: straight }, { size: 'M', myGauge: g }).pieces.map((piece) => ({ piece, completedRows: 0, gauge: g }));
+    const Ld = layoutOf(ds);
+    const len = Ld.tubes.get(ds[0]!)!.length;
+    expect(len - Ld.topY).toBeGreaterThan(12.5);
+    expect(len - Ld.topY).toBeLessThan(15.5);
+    // 밑단에서 겨드랑이까지 천천히 좁아지는 원통 몸판 (A라인): 진동으로 잘못 보지 않음
+    const aline = base.pieces
+      .filter((p) => p.id === 'sleeve')
+      .concat({
+        ...base.pieces[0]!,
+        id: 'body',
+        name: '몸판',
+        construction: 'round',
+        castOn: { M: 240 },
+        sections: [{ name: '몸통', technique: 'stockinette', rows: { M: 120 }, instruction: '', events: [], shaping: [{ kind: 'dec', everyRows: { M: 10 }, times: { M: 10 }, stitchesPerEvent: 4, position: '옆선', afterRows: { M: 4 } }] }],
+      });
+    const al = convertPattern({ ...base, pieces: aline }, { size: 'M', myGauge: g }).pieces.map((piece) => ({ piece, completedRows: 0, gauge: g }));
+    const La = layoutOf(al);
+    const body = al.find((p) => La.roles.get(p) === 'body')!;
+    expect(La.topY).toBeCloseTo(La.tubes.get(body)!.length, 6);
   });
 
   it('비니는 머리에 씌운 모양: 챙은 이마, 정수리로 갈수록 좁아짐', () => {
